@@ -1,0 +1,364 @@
+/*!
+ * Soft UI Dashboard - Free Bootstrap 5 Dashboard
+ * @version v1.0.7
+ * @link https://www.creative-tim.com/product/soft-ui-dashboard
+ * Copyright (c) 2022 Creative Tim
+ * License: MIT
+ */
+
+/* Soft UI Dashboard Custom Styles for EasyPark */
+
+:root {
+  --soft-primary: #cb0c9f;
+  --soft-secondary: #8392ab;
+  --soft-success: #28a745;
+  --soft-info: #17a2b8;
+  --soft-warning: #fbcf33;
+  --soft-danger: #ea0606;
+  --soft-light: #f8f9fa;
+  --soft-dark: #344767;
+  
+  --soft-gradient: linear-gradient(310deg, #7928ca, #ff0080);
+  --soft-gradient-success: linear-gradient(310deg, #17ad37, #98ec2d);
+  --soft-gradient-info: linear-gradient(310deg, #2152ff, #21d4fd);
+  
+  --soft-box-shadow: 0 20px 27px 0 rgba(0,0,0,0.05);
+  --soft-box-shadow-hover: 0 20px 27px 0 rgba(0,0,0,0.1);
+}
+
+/* Soft UI Typography */
+.soft-h1, .soft-h2, .soft-h3, .soft-h4, .soft-h5, .soft-h6 {
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.soft-text-gradient {
+  background: var(--soft-gradient);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Soft UI Cards */
+.soft-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  word-wrap: break-word;
+  background-color: #fff;
+  background-clip: border-box;
+  border: 0;
+  border-radius: 1rem;
+  box-shadow: var(--soft-box-shadow);
+  transition: all 0.3s ease;
+}
+
+.soft-card:hover {
+  box-shadow: var(--soft-box-shadow-hover);
+  transform: translateY(-3px);
+}
+
+.soft-card-header {
+  padding: 1.5rem;
+  margin-bottom: 0;
+  background-color: transparent;
+  border-bottom: 1px solid rgba(0,0,0,0.05);
+}
+
+.soft-card-body {
+  padding: 1.5rem;
+  flex: 1 1 auto;
+}
+
+/* Soft UI Avatars */
+.soft-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  color: #fff;
+  background: var(--soft-gradient);
+}
+
+.soft-avatar-sm {
+  width: 36px;
+  height: 36px;
+  font-size: 0.875rem;
+}
+
+.soft-avatar-lg {
+  width: 74px;
+  height: 74px;
+  font-size: 1.5rem;
+}
+
+/* Soft UI Badges */
+.soft-badge {
+  display: inline-block;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1;
+  text-align: center;
+  white-space: nowrap;
+  vertical-align: baseline;
+  border-radius: 0.5rem;
+  transition: all 0.3s ease;
+}
+
+.soft-badge-primary {
+  background: var(--soft-gradient);
+  color: #fff;
+}
+
+.soft-badge-success {
+  background: var(--soft-gradient-success);
+  color: #fff;
+}
+
+.soft-badge-info {
+  background: var(--soft-gradient-info);
+  color: #fff;
+}
+
+/* Soft UI Buttons */
+.soft-btn {
+  display: inline-block;
+  font-weight: 600;
+  line-height: 1.5;
+  color: #252f40;
+  text-align: center;
+  vertical-align: middle;
+  cursor: pointer;
+  user-select: none;
+  background-color: transparent;
+  border: 1px solid transparent;
+  padding: 0.625rem 1.5rem;
+  font-size: 0.875rem;
+  border-radius: 0.5rem;
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.soft-btn-primary {
+  background: var(--soft-gradient);
+  color: #fff;
+  border: none;
+}
+
+.soft-btn-primary:hover {
+  transform: scale(1.02);
+  box-shadow: 0 8px 16px rgba(203,12,159,0.2);
+}
+
+.soft-btn-success {
+  background: var(--soft-gradient-success);
+  color: #fff;
+  border: none;
+}
+
+.soft-btn-success:hover {
+  transform: scale(1.02);
+  box-shadow: 0 8px 16px rgba(23,173,55,0.2);
+}
+
+/* Soft UI Progress Bars */
+.soft-progress {
+  display: flex;
+  height: 0.5rem;
+  overflow: hidden;
+  font-size: 0.75rem;
+  background-color: #e9ecef;
+  border-radius: 0.5rem;
+}
+
+.soft-progress-bar {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  overflow: hidden;
+  color: #fff;
+  text-align: center;
+  white-space: nowrap;
+  background: var(--soft-gradient);
+  transition: width 0.6s ease;
+}
+
+/* Soft UI Tables */
+.soft-table {
+  width: 100%;
+  margin-bottom: 1rem;
+  color: #252f40;
+  vertical-align: middle;
+  border-color: #e9ecef;
+}
+
+.soft-table th {
+  padding: 0.75rem 1.5rem;
+  font-weight: 600;
+  border-bottom: 1px solid #e9ecef;
+}
+
+.soft-table td {
+  padding: 0.75rem 1.5rem;
+  border-bottom: 1px solid #e9ecef;
+}
+
+/* Soft UI Alerts */
+.soft-alert {
+  position: relative;
+  padding: 1rem 1.5rem;
+  margin-bottom: 1rem;
+  border: 0;
+  border-radius: 1rem;
+  background: #fff;
+  box-shadow: var(--soft-box-shadow);
+}
+
+.soft-alert-primary {
+  background: linear-gradient(310deg, #7928ca, #ff0080);
+  color: #fff;
+}
+
+.soft-alert-success {
+  background: linear-gradient(310deg, #17ad37, #98ec2d);
+  color: #fff;
+}
+
+/* Soft UI Navbar */
+.soft-navbar {
+  padding: 1rem 1.5rem;
+  background: rgba(255,255,255,0.8);
+  backdrop-filter: blur(10px);
+  box-shadow: var(--soft-box-shadow);
+  border-radius: 1rem;
+  margin: 1rem;
+}
+
+/* Soft UI Sidebar */
+.soft-sidebar {
+  background: linear-gradient(310deg, #7928ca, #ff0080);
+  border-radius: 1rem;
+  padding: 1.5rem;
+  margin: 1rem;
+  color: #fff;
+}
+
+.soft-sidebar .nav-link {
+  color: rgba(255,255,255,0.8);
+  padding: 0.75rem 1rem;
+  border-radius: 0.5rem;
+  transition: all 0.3s;
+}
+
+.soft-sidebar .nav-link:hover {
+  background: rgba(255,255,255,0.1);
+  color: #fff;
+  transform: translateX(5px);
+}
+
+.soft-sidebar .nav-link.active {
+  background: rgba(255,255,255,0.2);
+  color: #fff;
+  font-weight: 600;
+}
+
+/* Soft UI Inputs */
+.soft-input {
+  display: block;
+  width: 100%;
+  padding: 0.625rem 0.75rem;
+  font-size: 0.875rem;
+  font-weight: 400;
+  line-height: 1.5;
+  color: #252f40;
+  background-color: #fff;
+  background-clip: padding-box;
+  border: 1px solid #d2d6da;
+  border-radius: 0.5rem;
+  transition: all 0.3s ease;
+}
+
+.soft-input:focus {
+  border-color: #e293d3;
+  outline: 0;
+  box-shadow: 0 0 0 0.2rem rgba(203,12,159,0.25);
+}
+
+/* Soft UI Animations */
+@keyframes soft-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.soft-fade-in {
+  animation: soft-fade-in 0.5s ease-out;
+}
+
+@keyframes soft-slide-in {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+.soft-slide-in {
+  animation: soft-slide-in 0.3s ease-out;
+}
+
+/* Soft UI Stats Cards */
+.soft-stats-card {
+  background: #fff;
+  border-radius: 1rem;
+  padding: 1.5rem;
+  box-shadow: var(--soft-box-shadow);
+  position: relative;
+  overflow: hidden;
+}
+
+.soft-stats-card .icon {
+  position: absolute;
+  right: 1.5rem;
+  top: 1.5rem;
+  font-size: 3rem;
+  opacity: 0.2;
+}
+
+.soft-stats-card .value {
+  font-size: 2rem;
+  font-weight: 700;
+  color: #252f40;
+  margin-bottom: 0.25rem;
+}
+
+.soft-stats-card .label {
+  color: #8392ab;
+  font-size: 0.875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .soft-sidebar {
+    margin: 0.5rem;
+    padding: 1rem;
+  }
+  
+  .soft-card {
+    margin-bottom: 1rem;
+  }
+}

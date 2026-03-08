@@ -1,0 +1,21 @@
+<?php
+require_once '../includes/session.php';
+Session::requireAdmin();
+
+require_once '../includes/functions.php';
+
+if (isset($_POST['space_id'])) {
+    $conn = getDB();
+    $space_id = intval($_POST['space_id']);
+    
+    $stmt = $conn->prepare("SELECT * FROM parking_spaces WHERE id = ?");
+    $stmt->bind_param("i", $space_id);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    
+    if ($row = $result->fetch_assoc()) {
+        header('Content-Type: application/json');
+        echo json_encode($row);
+    }
+}
+?>
