@@ -14,7 +14,7 @@ $error = '';
 // Handle vehicle exit
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['booking_id'])) {
     $booking_id = intval($_POST['booking_id']);
-    $payment_method = $_POST['payment_method'];
+    $payment_method = $_POST['payment_method'] ?? 'auto'; // default success for now
     
     // Get booking details
     $booking_query = $conn->prepare("
@@ -183,9 +183,13 @@ include 'includes/header.php';
                                     <td><?php echo round($hours, 1); ?> hours</td>
                                     <td><strong class="text-success">रू <?php echo number_format($cost, 2); ?></strong></td>
                                     <td>
-                                        <button class="btn btn-sm btn-success" onclick="checkout(<?php echo $booking['id']; ?>)">
-                                            <i class="fas fa-sign-out-alt me-1"></i>Checkout
-                                        </button>
+                                        <form method="POST" class="d-inline">
+                                            <input type="hidden" name="booking_id" value="<?php echo $booking['id']; ?>">
+                                            <input type="hidden" name="payment_method" value="auto">
+                                            <button type="submit" class="btn btn-sm btn-success">
+                                                <i class="fas fa-sign-out-alt me-1"></i>Checkout
+                                            </button>
+                                        </form>
                                     </td>
                                 </tr>
                             <?php endwhile; ?>
@@ -202,55 +206,5 @@ include 'includes/header.php';
         </div>
     </div>
 </div>
-
-<!-- Checkout Modal -->
-<div class="modal fade" id="checkoutModal" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">Vehicle Checkout</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <form method="POST">
-                <div class="modal-body">
-                    <input type="hidden" name="booking_id" id="checkout_booking_id">
-                    
-                    <div class="mb-3">
-                        <label class="form-label">Payment Method</label>
-                        <select class="form-control" name="payment_method" required>
-                            <option value="cash">Cash</option>
-                            <option value="card">Credit/Debit Card</option>
-                            <option value="online">Online Payment</option>
-                        </select>
-                    </div>
-                    
-                    <div class="alert alert-info" id="cost_display"></div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-success">Process Checkout</button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
-
-<script>
-function checkout(bookingId) {
-    $('#checkout_booking_id').val(bookingId);
-    
-    // Calculate and display cost
-    $.ajax({
-        url: 'calculate_cost.php',
-        method: 'POST',
-        data: {booking_id: bookingId},
-        success: function(response) {
-            $('#cost_display').html(response);
-        }
-    });
-    
-    $('#checkoutModal').modal('show');
-}
-</script>
 
 <?php include 'includes/footer.php'; ?>

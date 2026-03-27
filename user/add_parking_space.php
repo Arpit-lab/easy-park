@@ -1,6 +1,6 @@
 <?php
 require_once '../includes/session.php';
-Session::requireUser();
+Session::requireAdmin(); // Add space management now restricted to admin only
 
 require_once '../includes/functions.php';
 

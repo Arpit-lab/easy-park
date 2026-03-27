@@ -11,6 +11,9 @@ $conn = getDB();
 $message = '';
 $error = '';
 
+// Get parking prediction
+$prediction = getParkingPrediction();
+
 // Handle vehicle entry
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $vehicle_number = strtoupper(trim($_POST['vehicle_number']));
@@ -139,6 +142,49 @@ include 'includes/header.php';
             </div>
         </div>
     </div>
+
+    <!-- Parking Prediction Widget -->
+    <?php if ($prediction): ?>
+    <div class="card mb-4" style="background: linear-gradient(135deg, <?php 
+        echo $prediction['severity'] == 'danger' ? '#f8d7da, #ffcccc' : 
+             ($prediction['severity'] == 'warning' ? '#fff3cd, #ffedd5' : '#d4edda, #e8f5e9');
+    ?>); border-left: 5px solid <?php 
+        echo $prediction['severity'] == 'danger' ? '#dc3545' : 
+             ($prediction['severity'] == 'warning' ? '#ffc107' : '#28a745');
+    ?>;">
+        <div class="card-body">
+            <h5 class="card-title mb-3">
+                <i class="fas fa-<?php 
+                    echo $prediction['severity'] == 'danger' ? 'exclamation-circle' : 
+                         ($prediction['severity'] == 'warning' ? 'info-circle' : 'check-circle');
+                ?> me-2"></i><?php echo $prediction['status']; ?>
+            </h5>
+            <div class="row">
+                <div class="col-md-7">
+                    <p class="mb-2"><strong>Current Status:</strong> <?php echo $prediction['occupancy_percent']; ?>% Occupancy</p>
+                    <p class="mb-0"><strong>Best Time to Park:</strong> <?php echo $prediction['best_time']; ?></p>
+                </div>
+                <div class="col-md-5 text-center">
+                    <div style="font-size: 2rem; font-weight: bold; color: <?php 
+                        echo $prediction['severity'] == 'danger' ? '#dc3545' : 
+                             ($prediction['severity'] == 'warning' ? '#ffc107' : '#28a745');
+                    ?>;"><?php echo $prediction['available_spaces']; ?></div>
+                    <small>Available / <?php echo $prediction['total_spaces']; ?> Total</small>
+                    <div class="mt-2">
+                        <div class="progress" style="height: 20px;">
+                            <div class="progress-bar <?php 
+                                echo $prediction['severity'] == 'danger' ? 'bg-danger' : 
+                                     ($prediction['severity'] == 'warning' ? 'bg-warning' : 'bg-success');
+                            ?>" style="width: <?php echo $prediction['occupancy_percent']; ?>%">
+                                <?php echo $prediction['occupancy_percent']; ?>%
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <?php endif; ?>
 
     <div class="row">
         <div class="col-md-8">

@@ -35,14 +35,21 @@ if (!$space) {
 
 // Handle booking submission
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $check_in = $_POST['check_in'] . ' ' . $_POST['check_in_time'] . ':00';
-    $check_out = $_POST['check_out'] . ' ' . $_POST['check_out_time'] . ':00';
+    $check_in_date = $_POST['check_in'];
+    $check_in_time = $_POST['check_in_time'];
+    $duration_mode = intval($_POST['duration_mode'] ?? 24);
     $vehicle_number = strtoupper(trim($_POST['vehicle_number']));
-    
+
+    $check_in_dt = new DateTime($check_in_date . ' ' . $check_in_time . ':00');
+    $check_out_dt = (clone $check_in_dt)->modify("+{$duration_mode} hours");
+
+    $check_in = $check_in_dt->format('Y-m-d H:i:s');
+    $check_out = $check_out_dt->format('Y-m-d H:i:s');
+
     // Validate dates
-    if (strtotime($check_in) >= strtotime($check_out)) {
+    if ($check_in_dt >= $check_out_dt) {
         $error = "Check-out time must be after check-in time";
-    } elseif (strtotime($check_in) < time()) {
+    } elseif ($check_in_dt < new DateTime()) {
         $error = "Check-in time cannot be in the past";
     } else {
         // Check availability
@@ -96,6 +103,117 @@ $vehicles = $vehicles->get_result();
     <!-- Font Awesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: #f8f9fa;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        #wrapper {
+            display: flex;
+            width: 100%;
+            align-items: stretch;
+        }
+
+        /* Sidebar - Green Theme */
+        #sidebar-wrapper {
+            min-width: 280px;
+            max-width: 280px;
+            background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+            color: #fff;
+            transition: all 0.3s;
+            height: 100vh;
+            position: fixed;
+            box-shadow: 2px 0 10px rgba(0,0,0,0.1);
+        }
+
+        #sidebar-wrapper .sidebar-heading {
+            padding: 20px;
+            font-size: 1.4rem;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+
+        #sidebar-wrapper .list-group {
+            width: 100%;
+            padding: 15px 0;
+        }
+
+        #sidebar-wrapper .list-group-item {
+            background: transparent;
+            border: none;
+            color: rgba(255,255,255,0.8);
+            padding: 12px 25px;
+            font-size: 1rem;
+            transition: all 0.3s;
+        }
+
+        #sidebar-wrapper .list-group-item:hover {
+            background: rgba(255,255,255,0.1);
+            color: #fff;
+            transform: translateX(5px);
+        }
+
+        #sidebar-wrapper .list-group-item.active {
+            background: rgba(255,255,255,0.2);
+            color: #fff;
+            font-weight: 600;
+            border-left: 4px solid #fff;
+        }
+
+        #sidebar-wrapper .list-group-item i {
+            margin-right: 10px;
+            width: 20px;
+        }
+
+        .sidebar-footer {
+            position: absolute;
+            bottom: 0;
+            width: 100%;
+            padding: 20px;
+            border-top: 1px solid rgba(255,255,255,0.1);
+            text-align: center;
+        }
+
+        /* Main Content */
+        #page-content-wrapper {
+            flex: 1;
+            margin-left: 280px;
+            padding: 20px;
+        }
+
+        .navbar {
+            background: white;
+            border-radius: 15px;
+            padding: 15px 25px;
+            margin-bottom: 30px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        .card {
+            border: none;
+            border-radius: 15px;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.1);
+            margin-bottom: 30px;
+        }
+
+        .card-header {
+            background: white;
+            border-bottom: 1px solid #eee;
+            padding: 20px 25px;
+            font-weight: 600;
+            border-radius: 15px 15px 0 0 !important;
+        }
+
+        .card-header i {
+            color: #28a745;
+            margin-right: 10px;
+        }
+
         .space-detail-card {
             background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
             color: white;
@@ -103,15 +221,63 @@ $vehicles = $vehicles->get_result();
             padding: 30px;
             margin-bottom: 30px;
         }
+
         .price-display {
             font-size: 2.5rem;
             font-weight: bold;
         }
+
         .booking-form {
             background: white;
             border-radius: 15px;
             padding: 30px;
             box-shadow: 0 5px 20px rgba(0,0,0,0.1);
+        }
+
+        .form-label {
+            font-weight: 500;
+            color: #333;
+        }
+
+        .form-control, .form-select {
+            border-radius: 8px;
+            border: 1px solid #ddd;
+            padding: 10px 15px;
+        }
+
+        .form-control:focus, .form-select:focus {
+            border-color: #28a745;
+            box-shadow: 0 0 0 0.2rem rgba(40, 167, 69, 0.25);
+        }
+
+        .btn-success {
+            background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+            border: none;
+            padding: 12px 30px;
+            font-weight: 600;
+            border-radius: 8px;
+            transition: all 0.3s;
+        }
+
+        .btn-success:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(40, 167, 69, 0.3);
+        }
+
+        .alert-info {
+            background: #d1ecf1;
+            border: none;
+            border-radius: 10px;
+            color: #0c5460;
+        }
+
+        @media (max-width: 768px) {
+            #sidebar-wrapper {
+                margin-left: -280px;
+            }
+            #page-content-wrapper {
+                margin-left: 0;
+            }
         }
     </style>
 </head>
@@ -129,11 +295,11 @@ $vehicles = $vehicles->get_result();
                 <a href="search_parking.php" class="list-group-item">
                     <i class="fas fa-search"></i> Search Parking
                 </a>
+                <a href="smart_recommendations.php" class="list-group-item">
+                    <i class="fas fa-lightbulb"></i> Smart Find
+                </a>
                 <a href="my_bookings.php" class="list-group-item">
                     <i class="fas fa-calendar-check"></i> My Bookings
-                </a>
-                <a href="add_parking_space.php" class="list-group-item">
-                    <i class="fas fa-plus-circle"></i> Add Parking Space
                 </a>
                 <a href="profile.php" class="list-group-item">
                     <i class="fas fa-user"></i> My Profile
@@ -141,6 +307,11 @@ $vehicles = $vehicles->get_result();
                 <a href="logout.php" class="list-group-item">
                     <i class="fas fa-sign-out-alt"></i> Logout
                 </a>
+            </div>
+            <div class="sidebar-footer">
+                <i class="fas fa-user-circle fa-2x mb-2"></i>
+                <p class="mb-0"><?php echo htmlspecialchars($_SESSION['full_name'] ?? $_SESSION['username']); ?></p>
+                <small>Member</small>
             </div>
         </div>
 
@@ -202,16 +373,23 @@ $vehicles = $vehicles->get_result();
                         
                         <form method="POST" action="" id="bookingForm">
                             <div class="row">
-                                <div class="col-md-6 mb-3">
+                                <div class="col-md-4 mb-3">
                                     <label class="form-label">Check-in Date</label>
                                     <input type="date" class="form-control" name="check_in" 
                                            id="check_in" min="<?php echo date('Y-m-d'); ?>" 
                                            value="<?php echo date('Y-m-d'); ?>" required>
                                 </div>
-                                <div class="col-md-6 mb-3">
+                                <div class="col-md-4 mb-3">
                                     <label class="form-label">Check-in Time</label>
                                     <input type="time" class="form-control" name="check_in_time" 
                                            id="check_in_time" value="<?php echo date('H:i'); ?>" required>
+                                </div>
+                                <div class="col-md-4 mb-3">
+                                    <label class="form-label">Duration</label>
+                                    <select class="form-select" name="duration_mode" id="duration_mode">
+                                        <option value="24" <?php echo (isset($_POST['duration_mode']) && $_POST['duration_mode']==24) ? 'selected' : ''; ?>>24 hours</option>
+                                        <option value="12" <?php echo (isset($_POST['duration_mode']) && $_POST['duration_mode']==12) ? 'selected' : ''; ?>>12 hours</option>
+                                    </select>
                                 </div>
                             </div>
                             
@@ -278,7 +456,12 @@ $vehicles = $vehicles->get_result();
         
         $(document).ready(function() {
             calculateCost();
+            updateCheckout();
             getDemandPrediction();
+
+            $('#duration_mode, #check_in, #check_in_time').on('change', function() {
+                updateCheckout();
+            });
         });
         
         $('#check_in, #check_in_time, #check_out, #check_out_time').on('change', function() {
@@ -296,6 +479,25 @@ $vehicles = $vehicles->get_result();
                 $('#duration').text(hours.toFixed(1));
                 $('#totalCost').text('रू ' + cost.toFixed(2));
             }
+        }
+
+        function updateCheckout() {
+            const checkInDate = $('#check_in').val();
+            const checkInTime = $('#check_in_time').val();
+            const durationHours = parseInt($('#duration_mode').val(), 10) || 24;
+
+            if (!checkInDate || !checkInTime) {
+                return;
+            }
+
+            const checkIn = new Date(checkInDate + 'T' + checkInTime);
+            const checkOut = new Date(checkIn.getTime() + durationHours * 60 * 60 * 1000);
+
+            const isoDate = checkOut.toISOString();
+            $('#check_out').val(isoDate.split('T')[0]);
+            $('#check_out_time').val(isoDate.split('T')[1].slice(0,5));
+
+            calculateCost();
         }
         
         function getDemandPrediction() {

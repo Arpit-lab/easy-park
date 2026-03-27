@@ -16,7 +16,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $category_id = intval($_POST['category_id'] ?? 0);
     $date = $_POST['date'] ?? date('Y-m-d');
     $time = $_POST['time'] ?? date('H:i');
-    
+    $user_lat = floatval($_POST['user_lat'] ?? 0);
+    $user_lng = floatval($_POST['user_lng'] ?? 0);
+    $duration_mode = intval($_POST['duration_mode'] ?? 24);
+
     $check_datetime = $date . ' ' . $time . ':00';
     
     $query = "
@@ -51,7 +54,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmt->bind_param($types, ...$params);
     }
     $stmt->execute();
-    $search_results = $stmt->get_result();
+    $result_set = $stmt->get_result();
+
+    $search_results = [];
+    while ($space = $result_set->fetch_assoc()) {
+        $space['distance'] = null;
+        if ($user_lat && $user_lng && $space['latitude'] && $space['longitude']) {
+            $space['distance'] = calculateDistanceKm($user_lat, $user_lng, $space['latitude'], $space['longitude']) * 1000; // meters
+        }
+        $search_results[] = $space;
+    }
+
+    if ($user_lat && $user_lng) {
+        usort($search_results, function($a, $b) {
+            $aDist = $a['distance'] === null ? PHP_INT_MAX : $a['distance'];
+            $bDist = $b['distance'] === null ? PHP_INT_MAX : $b['distance'];
+            return $aDist <=> $bDist;
+        });
+    }
 }
 ?>
 <!DOCTYPE html>
@@ -65,6 +85,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <!-- Font Awesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
     
     <style>
         /* Original EasyPark Theme - Green Gradient */
@@ -328,11 +350,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <a href="search_parking.php" class="list-group-item active">
                     <i class="fas fa-search"></i> Search Parking
                 </a>
+                <a href="smart_recommendations.php" class="list-group-item">
+                    <i class="fas fa-lightbulb"></i> Smart Find
+                </a>
                 <a href="my_bookings.php" class="list-group-item">
                     <i class="fas fa-calendar-check"></i> My Bookings
-                </a>
-                <a href="add_parking_space.php" class="list-group-item">
-                    <i class="fas fa-plus-circle"></i> Add Parking Space
                 </a>
                 <a href="profile.php" class="list-group-item">
                     <i class="fas fa-user"></i> My Profile
@@ -401,7 +423,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <input type="time" class="form-control" name="time" 
                                    value="<?php echo htmlspecialchars($_POST['time'] ?? date('H:i')); ?>">
                         </div>
-                        <div class="col-md-1 d-flex align-items-end">
+                        <div class="col-md-2">
+                            <label class="form-label">Duration</label>
+                            <select class="form-select" name="duration_mode">
+                                <option value="24" <?php echo (isset($_POST['duration_mode']) && $_POST['duration_mode'] == 24) ? 'selected' : ''; ?>>24 hours</option>
+                                <option value="12" <?php echo (isset($_POST['duration_mode']) && $_POST['duration_mode'] == 12) ? 'selected' : ''; ?>>12 hours</option>
+                            </select>
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">Use Current Location</label>
+                            <button type="button" class="btn btn-success w-100" onclick="fetchCurrentLocation()"><i class="fas fa-location-arrow me-2"></i>Enable</button>
+                        </div>
+                        <input type="hidden" name="user_lat" id="user_lat" value="<?php echo htmlspecialchars($_POST['user_lat'] ?? ''); ?>">
+                        <input type="hidden" name="user_lng" id="user_lng" value="<?php echo htmlspecialchars($_POST['user_lng'] ?? ''); ?>">
+                        <div class="col-md-2 d-flex align-items-end">
                             <button type="submit" class="btn btn-light w-100">
                                 <i class="fas fa-search"></i>
                             </button>
@@ -410,15 +445,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </form>
             </div>
 
+            <div class="mb-4">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <h5 class="mb-0"><i class="fas fa-map me-2"></i>Parking Location Map</h5>
+                    <button class="btn btn-sm btn-outline-primary" type="button" id="toggleMapBtn" onclick="toggleMap()">
+                        <i class="fas fa-eye-slash me-1"></i>Hide Map
+                    </button>
+                </div>
+                <div id="searchMap" style="height: 320px; border: 1px solid #ddd; border-radius: 10px; transition: all 0.3s;"></div>
+            </div>
+
             <!-- Search Results -->
-            <?php if ($search_results): ?>
+            <?php if (!empty($search_results)): ?>
                 <div class="card">
                     <div class="card-header">
-                        <i class="fas fa-list me-2"></i>Available Parking Spaces (<?php echo $search_results->num_rows; ?> found)
+                        <i class="fas fa-list me-2"></i>Available Parking Spaces (<?php echo count($search_results); ?> found)
                     </div>
                     <div class="card-body">
-                        <?php if ($search_results->num_rows > 0): ?>
-                            <?php while ($space = $search_results->fetch_assoc()): ?>
+                        <?php if (count($search_results) > 0): ?>
+                            <?php foreach ($search_results as $space): ?>
                                 <div class="space-card">
                                     <div class="row align-items-center">
                                         <div class="col-md-2">
@@ -430,6 +475,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                             <?php echo htmlspecialchars($space['location_name']); ?>
                                             <br>
                                             <small class="text-muted"><?php echo htmlspecialchars($space['address']); ?></small>
+                                            <br>
+                                            <small class="text-muted">Distance: <?php echo $space['distance'] !== null ? round($space['distance'], 1) . ' m' : 'N/A'; ?></small>
                                         </div>
                                         <div class="col-md-2">
                                             <div class="price-tag">रू <?php echo $space['price_per_hour']; ?><small>/hr</small></div>
@@ -453,7 +500,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                         </div>
                                     </div>
                                 </div>
-                            <?php endwhile; ?>
+                            <?php endforeach; ?>
                         <?php else: ?>
                             <div class="alert alert-info">
                                 <i class="fas fa-info-circle me-2"></i>
@@ -469,5 +516,70 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <!-- Scripts -->
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <script>
+        let searchMap = null;
+        let searchMarker = null;
+
+        function initSearchMap() {
+            searchMap = L.map('searchMap').setView([27.7172, 85.3240], 7);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                maxZoom: 18,
+                attribution: '© OpenStreetMap contributors'
+            }).addTo(searchMap);
+        }
+
+        function fetchCurrentLocation() {
+            if (!navigator.geolocation) {
+                alert('Geolocation not supported by your browser');
+                return;
+            }
+
+            navigator.geolocation.getCurrentPosition(function(position) {
+                const lat = position.coords.latitude;
+                const lng = position.coords.longitude;
+                document.getElementById('user_lat').value = lat;
+                document.getElementById('user_lng').value = lng;
+                document.querySelector('input[name="location"]').value = 'Current Location';
+
+                if (!searchMap) {
+                    initSearchMap();
+                }
+
+                if (searchMarker) {
+                    searchMap.removeLayer(searchMarker);
+                }
+
+                searchMarker = L.marker([lat, lng]).addTo(searchMap).bindPopup('Your Current Location').openPopup();
+                searchMap.setView([lat, lng], 13);
+            }, function(err) {
+                alert('Unable to get your location. Please enable location access in browser.');
+            });
+        }
+
+        function toggleMap() {
+            const mapDiv = document.getElementById('searchMap');
+            const toggleBtn = document.getElementById('toggleMapBtn');
+            
+            if (mapDiv.style.display === 'none') {
+                // Show map
+                mapDiv.style.display = 'block';
+                mapDiv.style.height = '320px';
+                toggleBtn.innerHTML = '<i class="fas fa-eye-slash me-1"></i>Hide Map';
+                if (searchMap) {
+                    searchMap.invalidateSize();
+                }
+            } else {
+                // Hide map
+                mapDiv.style.display = 'none';
+                mapDiv.style.height = '0px';
+                toggleBtn.innerHTML = '<i class="fas fa-eye me-1"></i>Show Map';
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            initSearchMap();
+        });
+    </script>
 </body>
 </html>

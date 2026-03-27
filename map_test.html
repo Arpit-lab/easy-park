@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>OpenStreetMap Test - 100% FREE</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+        #map { height: 400px; width: 100%; border: 2px solid #28a745; border-radius: 8px; }
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .info { background: #f0f8ff; padding: 10px; border-radius: 5px; margin-bottom: 10px; }
+    </style>
+</head>
+<body>
+    <h1>🆓 OpenStreetMap Test - 100% FREE</h1>
+    <div class="info">
+        <strong>✅ No API keys required</strong><br>
+        <strong>✅ No credit card needed</strong><br>
+        <strong>✅ No registration required</strong><br>
+        <strong>✅ Works worldwide including Nepal</strong>
+    </div>
+
+    <div id="map"></div>
+
+    <p><strong>Test:</strong> Click anywhere on the map to place a red dot marker and auto-populate location name!</p>
+    <p><strong>Location:</strong> <span id="location">Click on map to get location</span></p>
+    <p><strong>Coordinates:</strong> <span id="coords">Click on map to get coordinates</span></p>
+
+    <script>
+        let map = L.map('map').setView([27.7172, 85.3240], 13); // Kathmandu, Nepal
+        let marker = null;
+
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '© OpenStreetMap contributors'
+        }).addTo(map);
+
+        map.on('click', function(e) {
+            const lat = e.latlng.lat;
+            const lng = e.latlng.lng;
+
+            // Remove existing marker
+            if (marker) map.removeLayer(marker);
+
+            // Add red dot marker
+            const redDotIcon = L.icon({
+                iconUrl: 'https://maps.google.com/mapfiles/ms/icons/red-dot.png',
+                iconSize: [32, 32],
+                iconAnchor: [16, 16],
+                popupAnchor: [0, -16]
+            });
+
+            marker = L.marker([lat, lng], { icon: redDotIcon }).addTo(map);
+            map.setView([lat, lng], 16);
+
+            // Update coordinates
+            document.getElementById('coords').textContent = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+
+            // Get location name using Nominatim (FREE)
+            const nominatimUrl = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`;
+
+            fetch(nominatimUrl)
+                .then(response => response.json())
+                .then(data => {
+                    if (data && data.display_name) {
+                        let locationName = data.display_name;
+
+                        // Try to get a more user-friendly name
+                        if (data.address) {
+                            const addr = data.address;
+                            if (addr.neighbourhood) locationName = addr.neighbourhood;
+                            else if (addr.suburb) locationName = addr.suburb;
+                            else if (addr.city_district) locationName = addr.city_district;
+                            else if (addr.city) locationName = addr.city;
+                            else if (addr.town) locationName = addr.town;
+                            else if (addr.village) locationName = addr.village;
+                        }
+
+                        document.getElementById('location').textContent = locationName;
+                    } else {
+                        document.getElementById('location').textContent = `Location (${lat.toFixed(4)}, ${lng.toFixed(4)})`;
+                    }
+                })
+                .catch(error => {
+                    console.error('Geocoding error:', error);
+                    document.getElementById('location').textContent = `Location (${lat.toFixed(4)}, ${lng.toFixed(4)})`;
+                });
+        });
+
+        // Initial message
+        document.getElementById('location').textContent = 'Click on map to get location';
+        document.getElementById('coords').textContent = 'Click on map to get coordinates';
+    </script>
+</body>
+</html>

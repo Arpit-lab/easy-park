@@ -43,6 +43,45 @@ $nearby_spaces = $conn->query("
     ORDER BY ps.id
     LIMIT 5
 ");
+
+// Get availability summary by location with category info (enhanced for details view)
+$location_availability = $conn->query("
+    SELECT 
+        ps.location_name,
+        COUNT(*) as total_spaces,
+        SUM(ps.is_available = 1) as available_spaces,
+        SUM(ps.is_available = 0) as occupied_spaces,
+        COUNT(DISTINCT ps.category_id) as category_count,
+        GROUP_CONCAT(DISTINCT vc.category_name ORDER BY vc.category_name SEPARATOR ', ') as categories
+    FROM parking_spaces ps
+    LEFT JOIN vehicle_categories vc ON ps.category_id = vc.id
+    WHERE ps.status = 'active'
+    GROUP BY ps.location_name
+    ORDER BY available_spaces DESC
+");
+
+// Get detailed category breakdown for each location
+$location_details = [];
+$detail_query = $conn->query("
+    SELECT 
+        ps.location_name,
+        vc.category_name,
+        COUNT(*) as total_spaces,
+        SUM(ps.is_available = 1) as available_spaces,
+        SUM(ps.is_available = 0) as occupied_spaces
+    FROM parking_spaces ps
+    LEFT JOIN vehicle_categories vc ON ps.category_id = vc.id
+    WHERE ps.status = 'active'
+    GROUP BY ps.location_name, vc.category_name
+    ORDER BY ps.location_name, vc.category_name
+");
+
+while ($detail = $detail_query->fetch_assoc()) {
+    $location_details[$detail['location_name']][] = $detail;
+}
+
+// Get parking prediction
+$prediction = getParkingPrediction();
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -238,11 +277,11 @@ $nearby_spaces = $conn->query("
                 <a href="search_parking.php" class="list-group-item">
                     <i class="fas fa-search"></i> Search Parking
                 </a>
+                <a href="smart_recommendations.php" class="list-group-item">
+                    <i class="fas fa-lightbulb"></i> Smart Find
+                </a>
                 <a href="my_bookings.php" class="list-group-item">
                     <i class="fas fa-calendar-check"></i> My Bookings
-                </a>
-                <a href="add_parking_space.php" class="list-group-item">
-                    <i class="fas fa-plus-circle"></i> Add Parking Space
                 </a>
                 <a href="profile.php" class="list-group-item">
                     <i class="fas fa-user"></i> My Profile
@@ -315,10 +354,129 @@ $nearby_spaces = $conn->query("
                 </div>
                 <div class="col-md-4">
                     <div class="stat-card">
-                        <i class="fas fa-plus-circle stat-icon"></i>
-                        <h5>Add Space</h5>
-                        <p class="text-muted">List your parking space for rent</p>
-                        <a href="add_parking_space.php" class="btn btn-sm btn-outline-success">Add Space</a>
+                        <i class="fas fa-cogs stat-icon"></i>
+                        <h5>Manage Bookings</h5>
+                        <p class="text-muted">Use the search tab to find and book spaces.</p>
+                        <a href="search_parking.php" class="btn btn-sm btn-outline-success">Search Spaces</a>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Parking Prediction Widget -->
+            <?php if ($prediction): ?>
+            <div class="card mb-4" style="background: linear-gradient(135deg, <?php 
+                echo $prediction['severity'] == 'danger' ? '#f8d7da' : 
+                     ($prediction['severity'] == 'warning' ? '#fff3cd' : '#d4edda');
+            ?> 0%, white 100%); border-left: 5px solid <?php 
+                echo $prediction['severity'] == 'danger' ? '#dc3545' : 
+                     ($prediction['severity'] == 'warning' ? '#ffc107' : '#28a745');
+            ?>;">
+                <div class="card-body">
+                    <div class="row align-items-center">
+                        <div class="col-md-8">
+                            <h5 class="card-title mb-2">
+                                <i class="fas fa-<?php 
+                                    echo $prediction['severity'] == 'danger' ? 'exclamation-circle' : 
+                                         ($prediction['severity'] == 'warning' ? 'info-circle' : 'check-circle');
+                                ?> me-2"></i><?php echo $prediction['status']; ?>
+                            </h5>
+                            <p class="card-text mb-2"><?php echo $prediction['recommendation']; ?></p>
+                            <small class="text-muted">
+                                <strong>Current:</strong> <?php echo $prediction['available_spaces']; ?> of <?php echo $prediction['total_spaces']; ?> spaces available 
+                                (<?php echo $prediction['occupancy_percent']; ?>% occupied)
+                            </small>
+                        </div>
+                        <div class="col-md-4 text-center">
+                            <div class="h3 mb-0"><?php echo $prediction['available_spaces']; ?></div>
+                            <small>Spaces Available</small>
+                            <div class="mt-3">
+                                <div class="progress" style="height: 25px;">
+                                    <div class="progress-bar <?php 
+                                        echo $prediction['severity'] == 'danger' ? 'bg-danger' : 
+                                             ($prediction['severity'] == 'warning' ? 'bg-warning' : 'bg-success');
+                                    ?>" style="width: <?php echo $prediction['occupancy_percent']; ?>%">
+                                        <?php echo $prediction['occupancy_percent']; ?>%
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <?php endif; ?>
+
+            <!-- Location Availability (Smart Insight - Enhanced) -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <i class="fas fa-map-marked-alt me-2"></i>Parking Availability by Location
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-sm table-bordered">
+                            <thead>
+                                <tr>
+                                    <th>Location</th>
+                                    <th>Total Spaces</th>
+                                    <th>Available</th>
+                                    <th>Occupied</th>
+                                    <th>Vehicle Types</th>
+                                    <th>Details</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php while ($item = $location_availability->fetch_assoc()): ?>
+                                    <tr>
+                                        <td><?php echo htmlspecialchars($item['location_name'] ?: 'Unknown'); ?></td>
+                                        <td><?php echo intval($item['total_spaces']); ?></td>
+                                        <td><span class="badge bg-success"><?php echo intval($item['available_spaces']); ?></span></td>
+                                        <td><span class="badge bg-danger"><?php echo intval($item['occupied_spaces']); ?></span></td>
+                                        <td><?php echo intval($item['category_count']); ?> types</td>
+                                        <td>
+                                            <button class="btn btn-sm btn-outline-primary" type="button" data-bs-toggle="collapse" data-bs-target="#details-<?php echo md5($item['location_name']); ?>" aria-expanded="false">
+                                                <i class="fas fa-eye"></i> View
+                                            </button>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td colspan="6" class="p-0">
+                                            <div class="collapse" id="details-<?php echo md5($item['location_name']); ?>">
+                                                <div class="card card-body m-2">
+                                                    <h6>Vehicle Type Breakdown for <?php echo htmlspecialchars($item['location_name']); ?></h6>
+                                                    <div class="table-responsive">
+                                                        <table class="table table-sm">
+                                                            <thead>
+                                                                <tr>
+                                                                    <th>Vehicle Type</th>
+                                                                    <th>Total Spaces</th>
+                                                                    <th>Available</th>
+                                                                    <th>Occupied</th>
+                                                                </tr>
+                                                            </thead>
+                                                            <tbody>
+                                                                <?php if (isset($location_details[$item['location_name']])): ?>
+                                                                    <?php foreach ($location_details[$item['location_name']] as $detail): ?>
+                                                                        <tr>
+                                                                            <td><?php echo htmlspecialchars($detail['category_name'] ?: 'Unassigned'); ?></td>
+                                                                            <td><?php echo intval($detail['total_spaces']); ?></td>
+                                                                            <td><span class="badge bg-success"><?php echo intval($detail['available_spaces']); ?></span></td>
+                                                                            <td><span class="badge bg-danger"><?php echo intval($detail['occupied_spaces']); ?></span></td>
+                                                                        </tr>
+                                                                    <?php endforeach; ?>
+                                                                <?php else: ?>
+                                                                    <tr>
+                                                                        <td colspan="4" class="text-muted text-center">No data available</td>
+                                                                    </tr>
+                                                                <?php endif; ?>
+                                                            </tbody>
+                                                        </table>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                <?php endwhile; ?>
+                            </tbody>
+                        </table>
                     </div>
                 </div>
             </div>

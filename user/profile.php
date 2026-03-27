@@ -356,11 +356,11 @@ $stats = $stats->get_result()->fetch_assoc();
                 <a href="search_parking.php" class="list-group-item">
                     <i class="fas fa-search"></i> Search Parking
                 </a>
+                <a href="smart_recommendations.php" class="list-group-item">
+                    <i class="fas fa-lightbulb"></i> Smart Find
+                </a>
                 <a href="my_bookings.php" class="list-group-item">
                     <i class="fas fa-calendar-check"></i> My Bookings
-                </a>
-                <a href="add_parking_space.php" class="list-group-item">
-                    <i class="fas fa-plus-circle"></i> Add Parking Space
                 </a>
                 <a href="profile.php" class="list-group-item active">
                     <i class="fas fa-user"></i> My Profile

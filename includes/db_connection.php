@@ -9,6 +9,11 @@ class Database {
         try {
             $this->connection = new mysqli(DB_HOST, DB_USER, DB_PASS, DB_NAME);
             
+            // If connection fails, try with socket
+            if ($this->connection->connect_error) {
+                $this->connection = new mysqli(DB_HOST, DB_USER, DB_PASS, DB_NAME, null, DB_SOCKET);
+            }
+            
             if ($this->connection->connect_error) {
                 throw new Exception("Connection failed: " . $this->connection->connect_error);
             }

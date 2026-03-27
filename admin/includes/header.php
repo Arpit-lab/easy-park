@@ -25,6 +25,11 @@ $current_page = basename($_SERVER['PHP_SELF']);
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <!-- Custom Admin CSS -->
     <link href="../assets/css/admin.css" rel="stylesheet">
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <!-- OpenStreetMap with Leaflet (100% FREE - No API keys needed) -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     
     <style>
         /* Additional fix for sidebar */
@@ -99,6 +104,9 @@ $current_page = basename($_SERVER['PHP_SELF']);
                 </a>
                 <a href="anomaly_alerts.php" class="list-group-item <?php echo $current_page == 'anomaly_alerts.php' ? 'active' : ''; ?>">
                     <i class="fas fa-exclamation-triangle"></i> Anomaly Alerts
+                </a>
+                <a href="smart_recommendations.php" class="list-group-item <?php echo $current_page == 'smart_recommendations.php' ? 'active' : ''; ?>">
+                    <i class="fas fa-lightbulb"></i> Smart Recommendations
                 </a>
             </div>
             
