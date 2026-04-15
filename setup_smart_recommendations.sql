@@ -66,9 +66,9 @@ CREATE TABLE IF NOT EXISTS parking_bookings (
     vehicle_number VARCHAR(50),
     user_id INT,
     check_in DATETIME,
-    check_out DATETIME,
+    expected_check_out DATETIME,
     booking_status ENUM('active', 'completed', 'cancelled') DEFAULT 'active',
-    amount DECIMAL(10, 2),
+    total_amount DECIMAL(10, 2),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (space_id) REFERENCES parking_spaces(id) ON DELETE CASCADE
 );

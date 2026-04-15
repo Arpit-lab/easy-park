@@ -38,6 +38,47 @@ $today_transactions = $conn->query("
     LIMIT 10
 ");
 
+// Revenue for chart (months current year)
+$revenue_by_month = array_fill(1, 12, 0);
+$monthly_result = $conn->query(
+    "SELECT MONTH(created_at) AS month, COALESCE(SUM(amount),0) AS total 
+     FROM parking_transactions 
+     WHERE YEAR(created_at) = YEAR(CURDATE()) 
+     GROUP BY MONTH(created_at)"
+);
+while ($row = $monthly_result->fetch_assoc()) {
+    $revenue_by_month[intval($row['month'])] = floatval($row['total']);
+}
+
+// Vehicle distribution by category (parking spaces count)
+$vehicle_labels = [];
+$vehicle_values = [];
+$available_spaces_by_category = [];
+$vehicle_dist_result = $conn->query(
+    "SELECT vc.id AS category_id, vc.category_name, COUNT(ps.id) AS total_spaces, 
+            SUM(CASE WHEN ps.is_available = 1 THEN 1 ELSE 0 END) AS available_spaces 
+     FROM vehicle_categories vc 
+     LEFT JOIN parking_spaces ps ON ps.category_id = vc.id AND ps.status = 'active' 
+     GROUP BY vc.id, vc.category_name"
+);
+while ($row = $vehicle_dist_result->fetch_assoc()) {
+    $label = $row['category_name'] ?: 'Unspecified';
+    $vehicle_labels[] = $label;
+    $vehicle_values[] = intval($row['total_spaces']);
+    $available_spaces_by_category[] = intval($row['available_spaces']);
+}
+
+// Incoming active bookings data for cards and listing
+$incoming_bookings = $conn->query(
+    "SELECT pb.*, u.username, ps.space_number, vc.category_name 
+     FROM parking_bookings pb 
+     LEFT JOIN users u ON pb.user_id = u.id 
+     LEFT JOIN parking_spaces ps ON pb.space_id = ps.id 
+     LEFT JOIN vehicle_categories vc ON ps.category_id = vc.id 
+     WHERE pb.booking_status = 'active' 
+     ORDER BY pb.check_in DESC"
+);
+
 include 'includes/header.php';
 ?>
 
@@ -323,7 +364,7 @@ include 'includes/header.php';
             labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
             datasets: [{
                 label: 'Revenue (रू)',
-                data: [12000, 19000, 15000, 22000, 18000, 24000, 28000, 26000, 30000, 32000, 35000, 38000],
+                data: <?php echo json_encode(array_values($revenue_by_month)); ?>,
                 borderColor: '#667eea',
                 backgroundColor: 'rgba(102, 126, 234, 0.1)',
                 borderWidth: 3,
@@ -354,14 +395,26 @@ include 'includes/header.php';
 
     // Vehicle Distribution Chart
     const ctx2 = document.getElementById('vehicleChart').getContext('2d');
+    const vehicleCategories = <?php echo json_encode($vehicle_labels); ?>;
+    const vehicleCounts = <?php echo json_encode($vehicle_values); ?>;
+    const availableSpaces = <?php echo json_encode($available_spaces_by_category); ?>;
+
+    const baseColors = ['#667eea', '#764ba2', '#ff6b6b', '#4ecdc4', '#ffe66d', '#a0d468', '#ffce54', '#ac92ec', '#5d9cec', '#f59b42'];
+    const chartColors = vehicleCategories.map((_, index) => {
+        if (index < baseColors.length) return baseColors[index];
+        const hue = (index * 360 / vehicleCategories.length) % 360;
+        return `hsl(${hue}, 70%, 50%)`;
+    });
+
     new Chart(ctx2, {
         type: 'doughnut',
         data: {
-            labels: ['Cars', 'Motorcycles', 'SUVs', 'Trucks', 'Bicycles'],
+            labels: vehicleCategories,
             datasets: [{
-                data: [45, 25, 15, 10, 5],
-                backgroundColor: ['#667eea', '#764ba2', '#ff6b6b', '#4ecdc4', '#ffe66d'],
-                borderWidth: 0
+                data: vehicleCounts,
+                backgroundColor: chartColors,
+                borderWidth: 1,
+                borderColor: '#fff'
             }]
         },
         options: {
@@ -370,6 +423,16 @@ include 'includes/header.php';
             plugins: {
                 legend: {
                     position: 'bottom'
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            const idx = context.dataIndex;
+                            const vehicles = vehicleCounts[idx] || 0;
+                            const spaces = availableSpaces[idx] || 0;
+                            return context.label + ': ' + vehicles + ' vehicles, ' + spaces + ' available spaces';
+                        }
+                    }
                 }
             }
         }

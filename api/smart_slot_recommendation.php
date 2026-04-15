@@ -85,6 +85,33 @@ try {
     $original_result_count = $result->num_rows;
     $searched_location = $location; // Remember the originally requested location
 
+    // Check if the requested category is available in the requested location
+    $category_available_in_location = true;
+    $category_message = '';
+
+    if (!empty($location) && $category_id > 0 && $result->num_rows === 0) {
+        // Check if the category exists at all in this location (even if not available)
+        $category_check_query = "
+            SELECT COUNT(*) as count FROM parking_spaces 
+            WHERE status = 'active' 
+            AND category_id = ? 
+            AND location_name LIKE ?
+        ";
+        $category_check_stmt = $conn->prepare($category_check_query);
+        $category_location = "%$location%";
+        $category_check_stmt->bind_param('is', $category_id, $category_location);
+        $category_check_stmt->execute();
+        $category_check_result = $category_check_stmt->get_result();
+        $category_count = $category_check_result->fetch_assoc()['count'];
+
+        if ($category_count > 0) {
+            $category_message = "The requested vehicle category is not currently available in '$location' (all spots occupied). Showing alternatives from other locations.";
+        } else {
+            $category_message = "The requested vehicle category is not available in '$location'. Showing alternatives from other locations that have this category.";
+        }
+        $category_available_in_location = false;
+    }
+
     // If location search gave zero result, do non-location fallback to get any available slot
     if (!empty($location) && $result->num_rows === 0) {
         $query = "
@@ -202,11 +229,103 @@ try {
     // Generate intelligent explanation
     $explanation = generateSlotExplanation($best_slot, $slots);
     
+    // Get all available spots in the requested location for map display
+    // If category is not available in requested location, show spots from other locations too
+    $all_spots_query = "
+        SELECT
+            ps.id,
+            ps.space_number,
+            ps.location_name,
+            COALESCE(ps.distance_from_entry, 0) as distance_from_entry,
+            COALESCE(ps.priority_level, 1) as priority_level,
+            ps.category_id,
+            COALESCE(vc.category_name, 'General') as category_name,
+            ps.price_per_hour,
+            ps.latitude,
+            ps.longitude,
+            ps.address,
+            ps.is_available
+        FROM parking_spaces ps
+        LEFT JOIN vehicle_categories vc ON ps.category_id = vc.id
+        WHERE ps.status = 'active'
+        AND ps.is_available = 1
+    ";
+
+    $all_spots_bind_types = '';
+    $all_spots_bind_values = [];
+
+    if ($category_available_in_location && !empty($searched_location)) {
+        // If category is available in requested location, show spots from that location,
+        // and if a specific category is selected, only show that category.
+        $all_spots_query .= " AND LOWER(TRIM(location_name)) LIKE LOWER(TRIM(?))";
+        $all_spots_bind_types .= 's';
+        $all_spots_bind_values[] = "%$searched_location%";
+
+        if ($category_id > 0) {
+            $all_spots_query .= " AND category_id = ?";
+            $all_spots_bind_types .= 'i';
+            $all_spots_bind_values[] = $category_id;
+        }
+    } elseif (!$category_available_in_location && $category_id > 0) {
+        // If category is not available in requested location, show spots from other locations with this category
+        $all_spots_query .= " AND category_id = ?";
+        $all_spots_bind_types .= 'i';
+        $all_spots_bind_values[] = $category_id;
+    }
+
+    $all_spots_stmt = $conn->prepare($all_spots_query);
+    if (!$all_spots_stmt) {
+        throw new Exception('All spots query prepare failed: ' . $conn->error);
+    }
+
+    if (!empty($all_spots_bind_values)) {
+        $all_spots_stmt->bind_param($all_spots_bind_types, ...$all_spots_bind_values);
+    }
+
+    if (!$all_spots_stmt->execute()) {
+        throw new Exception('All spots query execution failed: ' . $all_spots_stmt->error);
+    }
+
+    $all_spots_result = $all_spots_stmt->get_result();
+    $all_available_spots = [];
+
+    while ($spot = $all_spots_result->fetch_assoc()) {
+        $distance_user = null;
+        if ($use_user_location && floatval($spot['latitude']) && floatval($spot['longitude'])) {
+            $distance_user = calculateDistanceKm($user_lat, $user_lng, floatval($spot['latitude']), floatval($spot['longitude']));
+            $distance_user = round($distance_user * 1000, 2); // meters
+        }
+
+        $distance_entry = round(floatval($spot['distance_from_entry']), 2);
+        $priority = max(0, intval($spot['priority_level'] ?? 0));
+        $score = $distance_user !== null ? $distance_user + ($priority * 5) : $distance_entry + ($priority * 5);
+
+        $all_available_spots[] = [
+            'id' => intval($spot['id']),
+            'space_number' => $spot['space_number'],
+            'location_name' => $spot['location_name'],
+            'category_name' => $spot['category_name'],
+            'distance_from_entry' => $distance_entry,
+            'distance_from_user' => $distance_user,
+            'price_per_hour' => floatval($spot['price_per_hour']),
+            'latitude' => floatval($spot['latitude']),
+            'longitude' => floatval($spot['longitude']),
+            'address' => $spot['address'],
+            'score' => round($score, 2)
+        ];
+    }
+
+    usort($all_available_spots, function($a, $b) {
+        return $a['score'] <=> $b['score'];
+    });
+    
     // Prepare response
     $response = [
         'success' => true,
         'requested_location' => $searched_location,
         'is_from_requested_location' => $is_from_requested_location,
+        'category_available_in_location' => $category_available_in_location,
+        'category_message' => $category_message,
         'recommended_slot' => [
             'id' => intval($best_slot['id']),
             'space_number' => $best_slot['space_number'],
@@ -228,7 +347,8 @@ try {
             'average_score' => round(array_sum(array_column($slots, 'score')) / count($slots), 2),
             'total_available_slots' => count($slots)
         ],
-        'alternative_options' => getAlternativeRecommendations($slots, 2)
+        'alternative_options' => getAlternativeRecommendations($slots, 2),
+        'all_available_spots' => $all_available_spots
     ];
     
     echo json_encode($response);

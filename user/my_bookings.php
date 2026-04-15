@@ -6,7 +6,56 @@ require_once '../includes/functions.php';
 
 $conn = getDB();
 $user_id = $_SESSION['user_id'];
+$message = '';
+$error = '';
 
+// Handle checkout request from user dashboard
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'checkout') {
+    $booking_id = intval($_POST['booking_id']);
+
+    $bookingStmt = $conn->prepare("SELECT pb.*, ps.price_per_hour, ps.space_number, v.id AS vehicle_id FROM parking_bookings pb
+        JOIN parking_spaces ps ON pb.space_id = ps.id
+        LEFT JOIN vehicles v ON pb.vehicle_id = v.id
+        WHERE pb.id = ? AND pb.user_id = ? AND pb.booking_status = 'active'");
+    $bookingStmt->bind_param("ii", $booking_id, $user_id);
+    $bookingStmt->execute();
+    $booking = $bookingStmt->get_result()->fetch_assoc();
+
+    if ($booking) {
+        $check_out = date('Y-m-d H:i:s');
+        $hours = calculateDuration($booking['check_in'], $check_out);
+        $amount = $hours * $booking['price_per_hour'];
+
+        $conn->begin_transaction();
+
+        try {
+            $updateBooking = $conn->prepare("UPDATE parking_bookings SET check_out = ?, total_amount = ?, booking_status = 'completed' WHERE id = ?");
+            $updateBooking->bind_param("sdi", $check_out, $amount, $booking_id);
+            $updateBooking->execute();
+
+            $receipt_number = generateReceiptNumber();
+            $transaction = $conn->prepare("INSERT INTO parking_transactions (booking_id, vehicle_number, check_in, check_out, duration_hours, amount, payment_method, receipt_number, operator_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
+            $payment_method = 'online';
+            $transaction->bind_param("isssddssi", $booking_id, $booking['vehicle_number'], $booking['check_in'], $check_out, $hours, $amount, $payment_method, $receipt_number, $user_id);
+            $transaction->execute();
+
+            $conn->query("UPDATE parking_spaces SET is_available = 1 WHERE id = " . intval($booking['space_id']));
+            if ($booking['vehicle_id']) {
+                $conn->query("UPDATE vehicles SET status = 'out' WHERE id = " . intval($booking['vehicle_id']));
+            }
+
+            $conn->commit();
+            $message = 'Checked out successfully. Total amount: रू ' . number_format($amount, 2);
+            logActivity($user_id, 'user_checkout', "Checked out booking {$booking['booking_number']}");
+
+        } catch (Exception $e) {
+            $conn->rollback();
+            $error = 'Checkout failed: ' . $e->getMessage();
+        }
+    } else {
+        $error = 'No active booking found for checkout.';
+    }
+}
 // Get all user bookings
 $bookings = $conn->prepare("
     SELECT pb.*, ps.space_number, ps.location_name, ps.address, ps.price_per_hour,
@@ -377,6 +426,20 @@ $bookings = $bookings->get_result();
                 </div>
             </nav>
 
+            <!-- Notifications -->
+            <?php if ($message): ?>
+                <div class="alert alert-success alert-dismissible fade show" role="alert">
+                    <i class="fas fa-check-circle me-2"></i><?php echo $message; ?>
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            <?php endif; ?>
+            <?php if ($error): ?>
+                <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                    <i class="fas fa-exclamation-circle me-2"></i><?php echo $error; ?>
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            <?php endif; ?>
+
             <!-- Bookings List -->
             <div class="card">
                 <div class="card-header">
@@ -443,6 +506,13 @@ $bookings = $bookings->get_result();
                                             </td>
                                             <td>
                                                 <?php if ($booking['booking_status'] == 'active'): ?>
+                                                    <form method="POST" style="display:inline;">
+                                                        <input type="hidden" name="action" value="checkout">
+                                                        <input type="hidden" name="booking_id" value="<?php echo $booking['id']; ?>">
+                                                        <button type="submit" class="btn btn-sm btn-success">
+                                                            <i class="fas fa-credit-card"></i>
+                                                        </button>
+                                                    </form>
                                                     <button class="btn btn-sm btn-warning" onclick="extendBooking(<?php echo $booking['id']; ?>)">
                                                         <i class="fas fa-clock"></i>
                                                     </button>

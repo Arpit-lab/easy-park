@@ -7,3 +7,7 @@ MAMP Control	http://localhost:8888/MAMP/
 
 arpit123
 A12345B@
+
+
+admin
+Admin@123

@@ -136,15 +136,9 @@ function calculateDuration($check_in, $check_out = null) {
     $check_out_time = $check_out ? new DateTime($check_out) : new DateTime();
     
     $interval = $check_in_time->diff($check_out_time);
-    $hours = $interval->h + ($interval->days * 24);
-    $minutes = $interval->i;
+    $hours = $interval->h + ($interval->days * 24) + ($interval->i / 60) + ($interval->s / 3600);
     
-    // Round up to nearest hour if minutes > 0
-    if ($minutes > 0) {
-        $hours += 1;
-    }
-    
-    return $hours;
+    return round($hours, 2);
 }
 
 // Calculate parking amount
@@ -392,8 +386,20 @@ function getAlternativeRecommendations($slots, $limit = 2) {
 /**
  * Get parking prediction based on historical data
  * Analyzes entry/exit patterns by hour
+ * Cached for 1 hour to improve performance
  */
 function getParkingPrediction() {
+    $cache_file = __DIR__ . '/../tmp/prediction_cache.json';
+    $cache_time = 3600; // 1 hour
+
+    // Check if cache exists and is fresh
+    if (file_exists($cache_file) && (time() - filemtime($cache_file) < $cache_time)) {
+        $cached_data = json_decode(file_get_contents($cache_file), true);
+        if ($cached_data) {
+            return $cached_data;
+        }
+    }
+
     $conn = getDB();
     
     // Get hourly occupancy from last 30 days
@@ -445,6 +451,7 @@ function getParkingPrediction() {
     $occupancy_percent = $total_spaces > 0 ? ($current_vehicles / $total_spaces) * 100 : 0;
     
     // Determine status
+    $recommendation = '';
     if ($occupancy_percent >= 80) {
         $status = "Parking likely full";
         $severity = "danger";
@@ -480,10 +487,19 @@ function getParkingPrediction() {
     
     $best_time_start = str_pad($best_hour, 2, '0', STR_PAD_LEFT) . ':00';
     $best_time_end = str_pad(($best_hour + 2) % 24, 2, '0', STR_PAD_LEFT) . ':00';
+
+    if ($severity === 'danger') {
+        $recommendation = "Highly busy now. Try during {$best_time_start} - {$best_time_end} or use an alternate location.";
+    } elseif ($severity === 'warning') {
+        $recommendation = "Moderate traffic. Best time is between {$best_time_start} and {$best_time_end}.";
+    } else {
+        $recommendation = "Plenty of availability now. Peak time is around " . str_pad($worst_hour, 2, '0', STR_PAD_LEFT) . ":00" . ".";
+    }
     
     return [
         'status' => $status,
         'severity' => $severity,
+        'recommendation' => $recommendation,
         'occupancy_percent' => round($occupancy_percent, 1),
         'current_hour' => $current_hour,
         'current_vehicles' => $current_vehicles,
@@ -494,6 +510,14 @@ function getParkingPrediction() {
         'worst_hour' => $worst_hour,
         'hourly_data' => $hourly_data
     ];
+
+    // Cache the result
+    if (!is_dir(dirname($cache_file))) {
+        mkdir(dirname($cache_file), 0755, true);
+    }
+    file_put_contents($cache_file, json_encode($result));
+
+    return $result;
 }
 
 ?>

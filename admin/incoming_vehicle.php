@@ -83,6 +83,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
+// Incoming active bookings (for table and badge)
+$incoming_bookings = $conn->query(
+    "SELECT pb.*, u.username, ps.space_number, vc.category_name 
+     FROM parking_bookings pb 
+     LEFT JOIN users u ON pb.user_id = u.id 
+     LEFT JOIN parking_spaces ps ON pb.space_id = ps.id 
+     LEFT JOIN vehicle_categories vc ON ps.category_id = vc.id 
+     WHERE pb.booking_status = 'active' AND pb.check_in <= DATE_ADD(NOW(), INTERVAL 1 HOUR)
+     ORDER BY pb.check_in DESC"
+);
+
+// Upcoming bookings
+$upcoming_bookings = $conn->query(
+    "SELECT pb.*, u.username, ps.space_number, vc.category_name 
+     FROM parking_bookings pb 
+     LEFT JOIN users u ON pb.user_id = u.id 
+     LEFT JOIN parking_spaces ps ON pb.space_id = ps.id 
+     LEFT JOIN vehicle_categories vc ON ps.category_id = vc.id 
+     WHERE pb.booking_status = 'active' AND pb.check_in > DATE_ADD(NOW(), INTERVAL 1 HOUR)
+     ORDER BY pb.check_in ASC"
+);
+
 // Get available spaces
 $available_spaces = $conn->query("
     SELECT ps.*, vc.category_name 
@@ -140,6 +162,86 @@ include 'includes/header.php';
                 <div class="stat-value"><?php echo date('h:i A'); ?></div>
                 <div class="stat-label">Current Time</div>
             </div>
+        </div>
+    </div>
+
+    <!-- Active Incoming Vehicles -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <i class="fas fa-truck-loading me-2"></i>Active Bookings (Arriving Soon)
+            <span class="badge bg-info text-white ms-2"><?php echo $incoming_bookings->num_rows; ?> active</span>
+        </div>
+        <div class="card-body">
+            <?php if ($incoming_bookings->num_rows > 0): ?>
+                <div class="table-responsive">
+                    <table class="table table-sm">
+                        <thead>
+                            <tr>
+                                <th>Booking #</th>
+                                <th>User</th>
+                                <th>Vehicle</th>
+                                <th>Space</th>
+                                <th>Category</th>
+                                <th>Check In</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php while ($incoming = $incoming_bookings->fetch_assoc()): ?>
+                                <tr>
+                                    <td><?php echo htmlspecialchars($incoming['booking_number']); ?></td>
+                                    <td><?php echo htmlspecialchars($incoming['username'] ?: 'Unknown'); ?></td>
+                                    <td><?php echo htmlspecialchars($incoming['vehicle_number']); ?></td>
+                                    <td><?php echo htmlspecialchars($incoming['space_number']); ?></td>
+                                    <td><?php echo htmlspecialchars($incoming['category_name'] ?: 'N/A'); ?></td>
+                                    <td><?php echo date('d M Y, h:i A', strtotime($incoming['check_in'])); ?></td>
+                                </tr>
+                            <?php endwhile; ?>
+                        </tbody>
+                    </table>
+                </div>
+            <?php else: ?>
+                <p class="mb-0">No vehicles arriving soon.</p>
+            <?php endif; ?>
+        </div>
+    </div>
+
+    <!-- Upcoming Bookings -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <i class="fas fa-calendar-alt me-2"></i>Upcoming Bookings
+            <span class="badge bg-warning text-white ms-2"><?php echo $upcoming_bookings->num_rows; ?> upcoming</span>
+        </div>
+        <div class="card-body">
+            <?php if ($upcoming_bookings->num_rows > 0): ?>
+                <div class="table-responsive">
+                    <table class="table table-sm">
+                        <thead>
+                            <tr>
+                                <th>Booking #</th>
+                                <th>User</th>
+                                <th>Vehicle</th>
+                                <th>Space</th>
+                                <th>Category</th>
+                                <th>Check In</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php while ($upcoming = $upcoming_bookings->fetch_assoc()): ?>
+                                <tr>
+                                    <td><?php echo htmlspecialchars($upcoming['booking_number']); ?></td>
+                                    <td><?php echo htmlspecialchars($upcoming['username'] ?: 'Unknown'); ?></td>
+                                    <td><?php echo htmlspecialchars($upcoming['vehicle_number']); ?></td>
+                                    <td><?php echo htmlspecialchars($upcoming['space_number']); ?></td>
+                                    <td><?php echo htmlspecialchars($upcoming['category_name'] ?: 'N/A'); ?></td>
+                                    <td><?php echo date('d M Y, h:i A', strtotime($upcoming['check_in'])); ?></td>
+                                </tr>
+                            <?php endwhile; ?>
+                        </tbody>
+                    </table>
+                </div>
+            <?php else: ?>
+                <p class="mb-0">No upcoming bookings.</p>
+            <?php endif; ?>
         </div>
     </div>
 

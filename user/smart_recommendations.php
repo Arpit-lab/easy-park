@@ -513,6 +513,7 @@ $prediction = getParkingPrediction();
         let directionsService = null;
         let directionsRenderer = null;
         let geocoder = null;
+        let routingControl = null;
 
         // Ensure Leaflet is loaded
         function ensureLeaflet() {
@@ -778,6 +779,7 @@ $prediction = getParkingPrediction();
                 url: '../api/smart_slot_recommendation.php',
                 method: 'POST',
                 dataType: 'json',
+                timeout: 30000,
                 data: {
                     location_id: location,
                     user_lat: hasGPS ? userLat : '',
@@ -787,71 +789,171 @@ $prediction = getParkingPrediction();
                 },
                 success: function(response) {
                     console.log('API Response:', response);
-                    hideMapLoading();
-                    if (response.success) {
-                        displayResults(response, location);
-                    } else {
-                        document.getElementById('resultsContainer').innerHTML = `
-                            <div class="card">
-                                <div class="card-body">
-                                    <div class="alert alert-warning mb-0">
-                                        <i class="fas fa-info-circle"></i> ${response.message}
-                                    </div>
-                                </div>
-                            </div>
-                        `;
+                    try {
+                        hideMapLoading();
+                        if (response && response.success) {
+                            displayResults(response, location);
+                        } else {
+                            displayError(response && response.message ? response.message : 'No parking spots found for the selected destination.');
+                        }
+                    } catch (err) {
+                        hideMapLoading();
+                        console.error('Error in success callback:', err);
+                        displayError('Error processing results: ' + err.message);
                     }
                 },
                 error: function(xhr, status, error) {
+                    hideMapLoading();
                     console.error('AJAX Error:', {
                         status: xhr.status,
                         statusText: xhr.statusText,
                         responseText: xhr.responseText,
                         error: error
                     });
-                    hideMapLoading();
-                    document.getElementById('resultsContainer').innerHTML = `
-                        <div class="card">
-                            <div class="card-body">
-                                <div class="alert alert-danger mb-0">
-                                    <i class="fas fa-exclamation-circle"></i> Error finding parking (${xhr.status}: ${xhr.statusText})
-                                </div>
-                            </div>
-                        </div>
-                    `;
+                    
+                    // Try to parse response as JSON even in error case
+                    try {
+                        const responseJson = JSON.parse(xhr.responseText);
+                        if (responseJson && responseJson.message) {
+                            displayError(responseJson.message);
+                            return;
+                        }
+                    } catch (e) {
+                        // Not JSON, continue with normal error handling
+                    }
+                    
+                    // Check if it's actually a successful response that got misclassified
+                    if (xhr.status === 200 && xhr.responseText) {
+                        try {
+                            const response = JSON.parse(xhr.responseText);
+                            if (response && response.success !== false) {
+                                displayResults(response, location);
+                                return;
+                            }
+                        } catch (e) {
+                            displayError('Invalid response format from server');
+                            return;
+                        }
+                    }
+                    
+                    displayError(`Error finding parking (${xhr.status}: ${xhr.statusText || status})`);
                 }
             });
         }
 
+        function displayError(message) {
+            document.getElementById('resultsContainer').innerHTML = `
+                <div class="card">
+                    <div class="card-body">
+                        <div class="alert alert-danger mb-0">
+                            <i class="fas fa-exclamation-triangle me-2"></i>
+                            <strong>Error:</strong> ${message}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // Format distance to show both meters and km
+        function formatDistance(meters) {
+            if (meters < 1000) {
+                return `${meters}m`;
+            } else {
+                const km = (meters / 1000).toFixed(1);
+                return `${km}km (${meters}m)`;
+            }
+        }
+
         // Display results
         function displayResults(response, destLocation) {
-            const slot = response.recommended_slot;
-            const isFromRequestedLocation = response.is_from_requested_location;
-            const userLatRaw = document.getElementById('user_lat').value;
-            const userLngRaw = document.getElementById('user_lng').value;
-            const userLat = parseFloat(userLatRaw);
-            const userLng = parseFloat(userLngRaw);
-            const parkingLat = parseFloat(slot.latitude);
-            const parkingLng = parseFloat(slot.longitude);
-            const userHasLocation = Number.isFinite(userLat) && Number.isFinite(userLng);
+            try {
+                const slot = response.recommended_slot;
+                const isFromRequestedLocation = response.is_from_requested_location;
+                const categoryAvailableInLocation = response.category_available_in_location;
+                const categoryMessage = response.category_message;
+                const selectedCategoryOption = document.getElementById('category_select').selectedOptions[0];
+                const selectedCategoryName = selectedCategoryOption ? selectedCategoryOption.text.trim() : '';
+                const selectedCategoryId = document.getElementById('category_select').value || '';
+                const userLatRaw = document.getElementById('user_lat').value;
+                const userLngRaw = document.getElementById('user_lng').value;
+                const userLat = parseFloat(userLatRaw);
+                const userLng = parseFloat(userLngRaw);
+                const parkingLat = parseFloat(slot.latitude);
+                const parkingLng = parseFloat(slot.longitude);
+                const userHasLocation = Number.isFinite(userLat) && Number.isFinite(userLng);
 
-            if (userHasLocation) {
-                addUserMarker(userLat, userLng);
-                addParkingMarker(parkingLat, parkingLng, slot.space_number);
-                showRoute([userLat, userLng], [parkingLat, parkingLng]);
-            } else {
-                addParkingMarker(parkingLat, parkingLng, slot.space_number);
-                smartMap.setView([parkingLat, parkingLng], 14);
-            }
+                // Clear existing markers
+                if (userMarker) smartMap.removeLayer(userMarker);
+                if (destinationMarker) smartMap.removeLayer(destinationMarker);
+                if (parkingMarker) smartMap.removeLayer(parkingMarker);
 
-            document.getElementById('routeInfoContainer').innerHTML = '';
+                // Clear all parking spot markers
+                if (window.parkingSpotMarkers) {
+                    window.parkingSpotMarkers.forEach(marker => smartMap.removeLayer(marker));
+                }
+                window.parkingSpotMarkers = [];
 
-            const pricePerHour = parseFloat(slot.price_per_hour || 0).toFixed(2);
-            
-            let html = '';
-            
-            // Only show "Best Parking Spot Found!" if it's from the requested location
-            if (isFromRequestedLocation) {
+                // Clear existing routing controls
+                if (routingControl && smartMap) {
+                    smartMap.removeControl(routingControl);
+                    routingControl = null;
+                }
+                if (window.currentRoutes) {
+                    window.currentRoutes.forEach(route => {
+                        if (route.remove) route.remove();
+                    });
+                    window.currentRoutes = [];
+                }
+
+                // Add user marker if GPS enabled
+                if (userHasLocation) {
+                    addUserMarker(userLat, userLng);
+                }
+
+                // Add destination marker
+                const destOption = document.querySelector('#location_select option:checked');
+                if (destOption && destOption.dataset.lat && destOption.dataset.lng) {
+                    const destLat = parseFloat(destOption.dataset.lat);
+                    const destLng = parseFloat(destOption.dataset.lng);
+                    addDestinationMarker(destLat, destLng, destLocation);
+                }
+
+                // Add markers for all available spots
+                if (response.all_available_spots && response.all_available_spots.length > 0) {
+                    addAllAvailableMarkers(response.all_available_spots, slot.id);
+                }
+
+                // Show routes for all available spots if GPS enabled
+                if (userHasLocation && response.all_available_spots && response.all_available_spots.length > 0) {
+                    setTimeout(() => {
+                        showAllRoutes(response.all_available_spots, userLat, userLng);
+                    }, 1000);
+                } else {
+                    // Center map on parking spot
+                    smartMap.setView([parkingLat, parkingLng], 14);
+                }
+
+                document.getElementById('routeInfoContainer').innerHTML = '';
+
+                const pricePerHour = parseFloat(slot.price_per_hour || 0).toFixed(2);
+                
+                let html = '';
+                
+                // Show category availability message if category not available in requested location
+                if (!categoryAvailableInLocation && categoryMessage) {
+                    html += `
+                    <div class="card border-warning">
+                        <div class="card-body">
+                            <div class="alert alert-warning mb-0">
+                                <i class="fas fa-exclamation-triangle me-2"></i>
+                                <strong>Category Notice:</strong> ${categoryMessage}
+                            </div>
+                        </div>
+                    </div>
+                    `;
+                }
+                
+                // Show recommended spot
                 html += `
                 <div class="card">
                     <div class="card-header" style="background: linear-gradient(135deg, #28a745 0%, #20c997 100%); color: white; border: none;">
@@ -866,8 +968,9 @@ $prediction = getParkingPrediction();
                             </div>
                             <div class="col-md-3">
                                 <p class="mb-2"><strong>📍 Distance from Entry:</strong></p>
-                                <h4 style="color: #28a745;">${Math.round(slot.distance_from_entry || slot.distance_from_user || 0)}m</h4>
+                                <h4 style="color: #28a745;">${Math.round(slot.distance_from_entry || 0)}m</h4>
                                 <small class="text-muted">Entry point</small>
+                                ${userHasLocation && slot.distance_from_user ? `<br><small class="text-info"><i class="fas fa-route me-1"></i>${Math.round(slot.distance_from_user)}m from you</small>` : ''}
                             </div>
                             <div class="col-md-3">
                                 <p class="mb-2"><strong>💰 Price/hr:</strong></p>
@@ -882,65 +985,271 @@ $prediction = getParkingPrediction();
                     </div>
                 </div>
                 `;
-            } else {
-                // If best spot is not from requested location, show message
-                html += `
-                <div class="card mb-4">
-                    <div class="card-body">
-                        <div class="alert alert-info mb-0">
-                            <i class="fas fa-info-circle me-2"></i>
-                            <strong>No spaces available in <u>${destLocation}</u></strong> for selected criteria. Showing the best available options from other locations below.
-                        </div>
-                    </div>
-                </div>
-                `;
-            }
 
-            if (response.alternative_options && response.alternative_options.length > 0) {
-                const headerText = isFromRequestedLocation ? 'Other Options (Different Locations)' : 'Available Options';
-                html += `<div class="card"><div class="card-header"><i class="fas fa-list me-2"></i>${headerText}</div><div class="card-body" style="padding: 0;">`;
+                // Show available spots list or fallback alternatives
+                const hasSameLocationSpots = response.all_available_spots && response.all_available_spots.length > 0;
+                let spotsToShow = hasSameLocationSpots ? response.all_available_spots : response.alternative_options;
+                const showingFallbackOptions = !hasSameLocationSpots;
+                let headerText = 'Available Spots';
 
-                response.alternative_options.forEach((alt, idx) => {
-                    const altPrice = parseFloat(alt.price_per_hour || 0).toFixed(2);
-                    const altDistance = Math.round(alt.distance_from_entry || alt.distance_from_user || 0);
-                    const categoryName = alt.category_name || 'General';
-                    
-                    html += `
-                        <div style="padding: 18px 25px; border-bottom: 1px solid #f0f0f0; transition: all 0.3s;" class="option-row" onmouseover="this.style.background='#f8f9fa'" onmouseout="this.style.background='white'">
-                            <div class="row align-items-center">
-                                <div class="col-md-3">
-                                    <h5 class="mb-0" style="color: #28a745;">${alt.space_number}</h5>
-                                    <p class="text-muted mb-0 small"><i class="fas fa-map-pin me-1"></i>${alt.location_name}</p>
-                                </div>
-                                <div class="col-md-2">
-                                    <p class="mb-0 small"><strong>📍 Distance:</strong></p>
-                                    <p class="mb-0" style="color: #28a745; font-weight: 600;">${altDistance}m from entry</p>
-                                </div>
-                                <div class="col-md-2">
-                                    <p class="mb-0 small"><strong>💰 Price:</strong></p>
-                                    <p class="mb-0" style="color: #28a745; font-weight: 600;">रू${altPrice}/hr</p>
-                                </div>
-                                <div class="col-md-2">
-                                    <p class="mb-0 small"><strong>📋 Type:</strong></p>
-                                    <p class="mb-0 small">${categoryName}</p>
-                                </div>
-                                <div class="col-md-3 text-end">
-                                    <a href="book_parking.php?space_id=${alt.id}" class="btn btn-sm btn-success">
-                                        <i class="fas fa-check me-1"></i>Book
-                                    </a>
-                                </div>
-                            </div>
-                        </div>
-                    `;
+                if (!categoryAvailableInLocation) {
+                    headerText = userHasLocation ? 'Available Spots in Other Locations (with GPS Distances)' : 'Available Spots in Other Locations';
+                } else if (selectedCategoryId) {
+                    headerText = userHasLocation ? `All Available ${selectedCategoryName} Spots in ${destLocation} (with GPS Distances)` : `All Available ${selectedCategoryName} Spots in ${destLocation}`;
+                } else {
+                    headerText = userHasLocation ? `All Available Spots in ${destLocation} (with GPS Distances)` : `All Available Spots in ${destLocation}`;
+                }
+
+                spotsToShow = spotsToShow.slice().sort((a, b) => {
+                    if (a.id === slot.id) return -1;
+                    if (b.id === slot.id) return 1;
+                    if (selectedCategoryId && a.category_name === selectedCategoryName && b.category_name !== selectedCategoryName) return -1;
+                    if (selectedCategoryId && b.category_name === selectedCategoryName && a.category_name !== selectedCategoryName) return 1;
+                    return (a.score || 0) - (b.score || 0);
                 });
 
-                html += '</div></div>';
-            } else if (isFromRequestedLocation) {
-                // No alternatives, but we have the best spot from requested location
-                html += '<p class="text-muted text-center mt-4"><i class="fas fa-info-circle"></i> No other parking options available</p>';
-            }
+                if (spotsToShow && spotsToShow.length > 0) {
+                    html += `<div class="card mt-4"><div class="card-header"><i class="fas fa-list me-2"></i>${headerText} in ${destLocation}</div><div class="card-body" style="padding: 0;">`;
 
-            document.getElementById('resultsContainer').innerHTML = html;
+                    spotsToShow.forEach((spot, idx) => {
+                        const spotPrice = parseFloat(spot.price_per_hour || 0).toFixed(2);
+                        const entryDistance = Math.round(spot.distance_from_entry || 0);
+                        const userDistance = spot.distance_from_user ? Math.round(spot.distance_from_user) : null;
+                        const categoryName = spot.category_name || 'General';
+                        const isRecommended = spot.id === slot.id;
+                        
+                        html += `
+                            <div style="padding: 18px 25px; border-bottom: 1px solid #f0f0f0; transition: all 0.3s; ${isRecommended ? 'background: #f0f9f0;' : ''}" class="option-row" onmouseover="this.style.background='${isRecommended ? '#e8f5e9' : '#f8f9fa'}'" onmouseout="this.style.background='${isRecommended ? '#f0f9f0' : 'white'}'">
+                                <div class="row align-items-center">
+                                    <div class="col-md-3">
+                                        <h5 class="mb-0" style="color: #28a745;">${isRecommended ? '⭐ ' : ''}${spot.space_number}</h5>
+                                        <p class="text-muted mb-0 small"><i class="fas fa-map-pin me-1"></i>${spot.location_name}</p>
+                                        ${isRecommended ? '<small class="badge bg-success">Recommended</small>' : ''}
+                                    </div>
+                                    <div class="col-md-2">
+                                        <p class="mb-0 small"><strong>📍 From Entry:</strong></p>
+                                        <p class="mb-0" style="color: #28a745; font-weight: 600;">${entryDistance}m</p>
+                                        ${userDistance !== null ? `<small class="text-info"><i class="fas fa-route me-1"></i>${formatDistance(userDistance)}</small>` : ''}
+                                    </div>
+                                    <div class="col-md-2">
+                                        <p class="mb-0 small"><strong>💰 Price:</strong></p>
+                                        <p class="mb-0" style="color: #28a745; font-weight: 600;">रू${spotPrice}/hr</p>
+                                    </div>
+                                    <div class="col-md-2">
+                                        <p class="mb-0 small"><strong>📋 Type:</strong></p>
+                                        <p class="mb-0 small">${categoryName}</p>
+                                    </div>
+                                    <div class="col-md-3 text-end">
+                                        <a href="book_parking.php?space_id=${spot.id}" class="btn btn-sm ${isRecommended ? 'btn-success' : 'btn-success'}">
+                                            <i class="fas fa-check me-1"></i>${isRecommended ? 'Book Recommended' : 'Book This Spot'}
+                                        </a>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    });
+
+                    html += '</div></div>';
+                }
+
+                document.getElementById('resultsContainer').innerHTML = html;
+
+                // Show routes for all available spots if GPS enabled
+                if (userHasLocation && response.all_available_spots && response.all_available_spots.length > 0) {
+                    setTimeout(() => {
+                        showAllRoutes(response.all_available_spots);
+                    }, 1000);
+                }
+
+                // Fit map to show all markers
+                setTimeout(() => {
+                    const bounds = [];
+                    if (userHasLocation) bounds.push([userLat, userLng]);
+                    if (Number.isFinite(parkingLat) && Number.isFinite(parkingLng)) bounds.push([parkingLat, parkingLng]);
+                    
+                    if (bounds.length > 1) {
+                        smartMap.fitBounds(bounds, { padding: [20, 20] });
+                    }
+                }, 1000);
+
+            } catch (err) {
+                console.error('Error in displayResults:', err);
+                displayError('Error displaying results: ' + err.message);
+            }
+        }
+
+        // Function to show routes for all available spots
+        function showAllRoutes(spots, userLat, userLng) {
+            try {
+                console.log('showAllRoutes called with', spots.length, 'spots');
+
+                // Clear existing single routing control
+                if (routingControl && smartMap) {
+                    smartMap.removeControl(routingControl);
+                    routingControl = null;
+                }
+
+                // Clear existing routes
+                if (window.currentRoutes) {
+                    window.currentRoutes.forEach(route => {
+                        if (route.remove) route.remove();
+                    });
+                }
+                window.currentRoutes = [];
+
+                // Get user location
+                if (!userLat || !userLng) {
+                    console.warn('User location not available for routing');
+                    return;
+                }
+
+                console.log('User location:', userLat, userLng);
+
+                spots.forEach((spot, index) => {
+                    if (spot.latitude && spot.longitude) {
+                        console.log(`Creating route ${index + 1} to spot:`, spot.space_number, 'at', spot.latitude, spot.longitude);
+
+                        try {
+                            const route = L.Routing.control({
+                                waypoints: [
+                                    L.latLng(userLat, userLng),
+                                    L.latLng(parseFloat(spot.latitude), parseFloat(spot.longitude))
+                                ],
+                                routeWhileDragging: false,
+                                addWaypoints: false,
+                                createMarker: function() { return null; }, // Don't create markers
+                                lineOptions: {
+                                    styles: [
+                                        {
+                                            color: index === 0 ? '#28a745' : '#007bff', // Green for recommended, blue for others
+                                            weight: index === 0 ? 4 : 3,
+                                            opacity: index === 0 ? 0.8 : 0.6
+                                        }
+                                    ]
+                                },
+                                show: false, // Don't show the routing panel
+                                collapsible: false,
+                                autoRoute: true,
+                                useZoomParameter: false,
+                                router: L.Routing.osrmv1({
+                                    serviceUrl: 'https://router.project-osrm.org/route/v1',
+                                    profile: 'driving'
+                                })
+                            });
+
+                            // Add event listeners for debugging
+                            route.on('routesfound', function(e) {
+                                console.log(`Route ${index + 1} found:`, e.routes[0].summary);
+                            });
+
+                            route.on('routingerror', function(e) {
+                                console.error(`Routing error for route ${index + 1}:`, e.error);
+                                // Fallback: draw a straight line if routing fails
+                                drawStraightLineRoute(userLat, userLng, parseFloat(spot.latitude), parseFloat(spot.longitude), index);
+                            });
+
+                            route.addTo(smartMap);
+                            window.currentRoutes.push(route);
+                        } catch (error) {
+                            console.error(`Error creating route ${index + 1}:`, error);
+                            // Fallback: draw a straight line
+                            drawStraightLineRoute(userLat, userLng, parseFloat(spot.latitude), parseFloat(spot.longitude), index);
+                        }
+                    }
+                });
+
+                console.log('Created', window.currentRoutes.length, 'routes');
+
+                // Fit map to show all routes after a delay
+                setTimeout(() => {
+                    if (window.currentRoutes.length > 0) {
+                        const bounds = L.latLngBounds();
+                        bounds.extend([userLat, userLng]);
+                        spots.forEach(spot => {
+                            if (spot.latitude && spot.longitude) {
+                                bounds.extend([parseFloat(spot.latitude), parseFloat(spot.longitude)]);
+                            }
+                        });
+                        smartMap.fitBounds(bounds, { padding: [20, 20] });
+                        console.log('Map fitted to bounds');
+                    }
+                }, 2000);
+
+            } catch (error) {
+                console.error('Error showing all routes:', error);
+            }
+        }
+
+        // Fallback function to draw straight line routes when routing service fails
+        function drawStraightLineRoute(fromLat, fromLng, toLat, toLng, index) {
+            try {
+                console.log(`Drawing straight line route ${index + 1} as fallback`);
+
+                const latlngs = [
+                    [fromLat, fromLng],
+                    [toLat, toLng]
+                ];
+
+                const routeLine = L.polyline(latlngs, {
+                    color: index === 0 ? '#28a745' : '#007bff',
+                    weight: index === 0 ? 4 : 3,
+                    opacity: index === 0 ? 0.8 : 0.6,
+                    dashArray: '10, 10' // Dashed line to indicate it's a straight line
+                }).addTo(smartMap);
+
+                // Store the line so it can be removed later
+                if (!window.currentRoutes) window.currentRoutes = [];
+                window.currentRoutes.push({
+                    remove: function() {
+                        smartMap.removeLayer(routeLine);
+                    }
+                });
+
+                console.log(`Straight line route ${index + 1} drawn successfully`);
+            } catch (error) {
+                console.error(`Error drawing straight line route ${index + 1}:`, error);
+            }
+        }
+
+        // Function to add markers for all available spots
+        function addAllAvailableMarkers(spots, recommendedId) {
+            try {
+                // Clear existing markers
+                if (window.parkingSpotMarkers) {
+                    window.parkingSpotMarkers.forEach(marker => smartMap.removeLayer(marker));
+                }
+                window.parkingSpotMarkers = [];
+
+                spots.forEach((spot, index) => {
+                    if (spot.latitude && spot.longitude) {
+                        const isRecommended = spot.id === recommendedId;
+                        const markerColor = isRecommended ? '#28a745' : '#007bff';
+                        const markerIcon = L.divIcon({
+                            className: 'custom-marker',
+                            html: `<div style="background-color: ${markerColor}; border: 2px solid white; border-radius: 50%; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 12px; box-shadow: 0 2px 5px rgba(0,0,0,0.3);">${isRecommended ? '★' : index + 1}</div>`,
+                            iconSize: [30, 30],
+                            iconAnchor: [15, 15]
+                        });
+
+                        const marker = L.marker([parseFloat(spot.latitude), parseFloat(spot.longitude)], { icon: markerIcon })
+                            .addTo(smartMap)
+                            .bindPopup(`
+                                <div style="font-family: Arial, sans-serif; max-width: 200px;">
+                                    <h6 style="margin: 0 0 8px 0; color: ${markerColor};">${isRecommended ? '⭐ ' : ''}${spot.space_number}</h6>
+                                    <p style="margin: 4px 0;"><strong>Location:</strong> ${spot.location_name}</p>
+                                    <p style="margin: 4px 0;"><strong>Price:</strong> रू${parseFloat(spot.price_per_hour || 0).toFixed(2)}/hr</p>
+                                    <p style="margin: 4px 0;"><strong>From Entry:</strong> ${Math.round(spot.distance_from_entry || 0)}m</p>
+                                    ${spot.distance_from_user ? `<p style="margin: 4px 0;"><strong>From You:</strong> ${Math.round(spot.distance_from_user)}m</p>` : ''}
+                                    <a href="book_parking.php?space_id=${spot.id}" class="btn btn-sm ${isRecommended ? 'btn-success' : 'btn-success'} mt-2" style="width: 100%;">Book This Spot</a>
+                                </div>
+                            `);
+
+                        window.parkingSpotMarkers.push(marker);
+                    }
+                });
+            } catch (error) {
+                console.error('Error adding all available markers:', error);
+            }
         }
 
         // Toggle smart map visibility

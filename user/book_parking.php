@@ -37,11 +37,12 @@ if (!$space) {
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $check_in_date = $_POST['check_in'];
     $check_in_time = $_POST['check_in_time'];
-    $duration_mode = intval($_POST['duration_mode'] ?? 24);
+    $check_out_date = $_POST['check_out'];
+    $check_out_time = $_POST['check_out_time'];
     $vehicle_number = strtoupper(trim($_POST['vehicle_number']));
 
     $check_in_dt = new DateTime($check_in_date . ' ' . $check_in_time . ':00');
-    $check_out_dt = (clone $check_in_dt)->modify("+{$duration_mode} hours");
+    $check_out_dt = new DateTime($check_out_date . ' ' . $check_out_time . ':00');
 
     $check_in = $check_in_dt->format('Y-m-d H:i:s');
     $check_out = $check_out_dt->format('Y-m-d H:i:s');
@@ -97,11 +98,15 @@ $vehicles = $vehicles->get_result();
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Book Parking - EasyPark</title>
-    
+
     <!-- Bootstrap CSS -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-1BmE4kWBq78iYhFldvKuhfTAU6auU8tT94WrHftjDbrCEXSU1oBoqyl2QvZ6jIW3" crossorigin="anonymous">
     <!-- Font Awesome -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" integrity="sha512-9usAa10IRO0HhonpyAIVpjrylPvoDwiPUiKdWk5t3PyolY1cOd4DSE0Ga+ri4AuTroPR5aQvXU9xC6qOPnzFeg==" crossorigin="anonymous" referrerpolicy="no-referrer">
+
+    <!-- Add caching headers for better performance -->
+    <meta http-equiv="Cache-Control" content="max-age=86400, public">
+    <meta http-equiv="Expires" content="<?php echo gmdate('D, d M Y H:i:s', time() + 86400) . ' GMT'; ?>">
     <style>
         * {
             margin: 0;
@@ -114,10 +119,50 @@ $vehicles = $vehicles->get_result();
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         }
 
+        /* Loading overlay */
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(255, 255, 255, 0.9);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+        }
+
+        .loading-content {
+            text-align: center;
+            color: #28a745;
+        }
+
+        .loading-spinner {
+            width: 50px;
+            height: 50px;
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #28a745;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
         #wrapper {
             display: flex;
             width: 100%;
             align-items: stretch;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        #wrapper.loaded {
+            opacity: 1;
         }
 
         /* Sidebar - Green Theme */
@@ -282,6 +327,15 @@ $vehicles = $vehicles->get_result();
     </style>
 </head>
 <body>
+    <!-- Loading Overlay -->
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="loading-content">
+            <div class="loading-spinner"></div>
+            <h4>Loading Booking Page...</h4>
+            <p class="text-muted">Please wait while we prepare your booking details.</p>
+        </div>
+    </div>
+
     <div class="d-flex" id="wrapper">
         <!-- Sidebar -->
         <div id="sidebar-wrapper">
@@ -379,19 +433,34 @@ $vehicles = $vehicles->get_result();
                                            id="check_in" min="<?php echo date('Y-m-d'); ?>" 
                                            value="<?php echo date('Y-m-d'); ?>" required>
                                 </div>
-                                <div class="col-md-4 mb-3">
+                                <div class="col-md-8 mb-3">
                                     <label class="form-label">Check-in Time</label>
-                                    <input type="time" class="form-control" name="check_in_time" 
-                                           id="check_in_time" value="<?php echo date('H:i'); ?>" required>
-                                </div>
-                                <div class="col-md-4 mb-3">
-                                    <label class="form-label">Duration</label>
-                                    <select class="form-select" name="duration_mode" id="duration_mode">
-                                        <option value="24" <?php echo (isset($_POST['duration_mode']) && $_POST['duration_mode']==24) ? 'selected' : ''; ?>>24 hours</option>
-                                        <option value="12" <?php echo (isset($_POST['duration_mode']) && $_POST['duration_mode']==12) ? 'selected' : ''; ?>>12 hours</option>
-                                    </select>
+                                    <div class="row">
+                                        <div class="col-4">
+                                            <select class="form-select" id="check_in_hour" required>
+                                                <?php for ($h = 1; $h <= 12; $h++): ?>
+                                                    <option value="<?php echo $h; ?>" <?php echo ($h == date('g')) ? 'selected' : ''; ?>><?php echo $h; ?></option>
+                                                <?php endfor; ?>
+                                            </select>
+                                        </div>
+                                        <div class="col-4">
+                                            <select class="form-select" id="check_in_minute" required>
+                                                <?php for ($m = 0; $m < 60; $m++): ?>
+                                                    <option value="<?php echo str_pad($m, 2, '0', STR_PAD_LEFT); ?>" <?php echo (str_pad($m, 2, '0', STR_PAD_LEFT) == date('i')) ? 'selected' : ''; ?>><?php echo str_pad($m, 2, '0', STR_PAD_LEFT); ?></option>
+                                                <?php endfor; ?>
+                                            </select>
+                                        </div>
+                                        <div class="col-4">
+                                            <select class="form-select" id="check_in_ampm" required>
+                                                <option value="AM" <?php echo (date('A') == 'AM') ? 'selected' : ''; ?>>AM</option>
+                                                <option value="PM" <?php echo (date('A') == 'PM') ? 'selected' : ''; ?>>PM</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <input type="hidden" name="check_in_time" id="check_in_time_hidden" value="<?php echo date('H:i'); ?>">
                                 </div>
                             </div>
+                            <small class="text-muted mb-3 d-block">* Select your preferred check-in and check-out times using the hour, minute, and AM/PM selectors. Duration selection quickly sets the check-out time, but you can adjust it manually. The cost updates dynamically based on your selected time period.</small>
                             
                             <div class="row">
                                 <div class="col-md-6 mb-3">
@@ -402,8 +471,36 @@ $vehicles = $vehicles->get_result();
                                 </div>
                                 <div class="col-md-6 mb-3">
                                     <label class="form-label">Check-out Time</label>
-                                    <input type="time" class="form-control" name="check_out_time" 
-                                           id="check_out_time" value="<?php echo date('H:i', strtotime('+2 hours')); ?>" required>
+                                    <div class="row">
+                                        <div class="col-4">
+                                            <select class="form-select" id="check_out_hour" required>
+                                                <?php 
+                                                $co_hour = date('g', strtotime('+1 hour'));
+                                                for ($h = 1; $h <= 12; $h++): ?>
+                                                    <option value="<?php echo $h; ?>" <?php echo ($h == $co_hour) ? 'selected' : ''; ?>><?php echo $h; ?></option>
+                                                <?php endfor; ?>
+                                            </select>
+                                        </div>
+                                        <div class="col-4">
+                                            <select class="form-select" id="check_out_minute" required>
+                                                <?php 
+                                                $co_minute = date('i', strtotime('+1 hour'));
+                                                for ($m = 0; $m < 60; $m++): ?>
+                                                    <option value="<?php echo str_pad($m, 2, '0', STR_PAD_LEFT); ?>" <?php echo (str_pad($m, 2, '0', STR_PAD_LEFT) == $co_minute) ? 'selected' : ''; ?>><?php echo str_pad($m, 2, '0', STR_PAD_LEFT); ?></option>
+                                                <?php endfor; ?>
+                                            </select>
+                                        </div>
+                                        <div class="col-4">
+                                            <select class="form-select" id="check_out_ampm" required>
+                                                <?php 
+                                                $co_ampm = date('A', strtotime('+1 hour'));
+                                                ?>
+                                                <option value="AM" <?php echo ($co_ampm == 'AM') ? 'selected' : ''; ?>>AM</option>
+                                                <option value="PM" <?php echo ($co_ampm == 'PM') ? 'selected' : ''; ?>>PM</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <input type="hidden" name="check_out_time" id="check_out_time_hidden" value="<?php echo date('H:i', strtotime('+1 hour')); ?>">
                                 </div>
                             </div>
                             
@@ -454,23 +551,39 @@ $vehicles = $vehicles->get_result();
     <script>
         const pricePerHour = <?php echo $space['price_per_hour']; ?>;
         
+        function updateTimeInput(prefix) {
+            const hour = parseInt($('#' + prefix + '_hour').val());
+            const minute = $('#' + prefix + '_minute').val();
+            const ampm = $('#' + prefix + '_ampm').val();
+            let hour24 = hour;
+            if (ampm === 'PM' && hour !== 12) hour24 += 12;
+            if (ampm === 'AM' && hour === 12) hour24 = 0;
+            const time24 = ('0' + hour24).slice(-2) + ':' + minute;
+            $('#' + prefix + '_time_hidden').val(time24);
+        }
+        
         $(document).ready(function() {
+            updateTimeInput('check_in');
+            updateTimeInput('check_out');
             calculateCost();
             updateCheckout();
             getDemandPrediction();
 
-            $('#duration_mode, #check_in, #check_in_time').on('change', function() {
+            $('#duration_mode, #check_in, #check_in_hour, #check_in_minute, #check_in_ampm').on('change', function() {
+                updateTimeInput('check_in');
                 updateCheckout();
+            });
+            
+            $('#check_in, #check_in_hour, #check_in_minute, #check_in_ampm, #check_out, #check_out_hour, #check_out_minute, #check_out_ampm').on('change', function() {
+                updateTimeInput('check_in');
+                updateTimeInput('check_out');
+                calculateCost();
             });
         });
         
-        $('#check_in, #check_in_time, #check_out, #check_out_time').on('change', function() {
-            calculateCost();
-        });
-        
         function calculateCost() {
-            const checkIn = new Date($('#check_in').val() + 'T' + $('#check_in_time').val());
-            const checkOut = new Date($('#check_out').val() + 'T' + $('#check_out_time').val());
+            const checkIn = new Date($('#check_in').val() + 'T' + $('#check_in_time_hidden').val());
+            const checkOut = new Date($('#check_out').val() + 'T' + $('#check_out_time_hidden').val());
             
             if (checkIn && checkOut && checkOut > checkIn) {
                 const hours = (checkOut - checkIn) / (1000 * 60 * 60);
@@ -483,8 +596,8 @@ $vehicles = $vehicles->get_result();
 
         function updateCheckout() {
             const checkInDate = $('#check_in').val();
-            const checkInTime = $('#check_in_time').val();
-            const durationHours = parseInt($('#duration_mode').val(), 10) || 24;
+            const checkInTime = $('#check_in_time_hidden').val();
+            const durationHours = parseInt($('#duration_mode').val(), 10) || 1;
 
             if (!checkInDate || !checkInTime) {
                 return;
@@ -495,8 +608,17 @@ $vehicles = $vehicles->get_result();
 
             const isoDate = checkOut.toISOString();
             $('#check_out').val(isoDate.split('T')[0]);
-            $('#check_out_time').val(isoDate.split('T')[1].slice(0,5));
-
+            
+            // Update the selects
+            const coHour12 = checkOut.getHours() % 12 || 12;
+            const coMinute = ('0' + checkOut.getMinutes()).slice(-2);
+            const coAmpm = checkOut.getHours() >= 12 ? 'PM' : 'AM';
+            
+            $('#check_out_hour').val(coHour12);
+            $('#check_out_minute').val(coMinute);
+            $('#check_out_ampm').val(coAmpm);
+            
+            updateTimeInput('check_out');
             calculateCost();
         }
         
@@ -507,7 +629,7 @@ $vehicles = $vehicles->get_result();
                 data: {
                     space_id: <?php echo $space_id; ?>,
                     date: $('#check_in').val(),
-                    hour: $('#check_in_time').val().split(':')[0]
+                    hour: $('#check_in_time_hidden').val().split(':')[0]
                 },
                 success: function(response) {
                     if (response.success) {
@@ -522,8 +644,8 @@ $vehicles = $vehicles->get_result();
         
         // Form validation
         $('#bookingForm').on('submit', function(e) {
-            const checkIn = new Date($('#check_in').val() + 'T' + $('#check_in_time').val());
-            const checkOut = new Date($('#check_out').val() + 'T' + $('#check_out_time').val());
+            const checkIn = new Date($('#check_in').val() + 'T' + $('#check_in_time_hidden').val());
+            const checkOut = new Date($('#check_out').val() + 'T' + $('#check_out_time_hidden').val());
             
             if (checkOut <= checkIn) {
                 e.preventDefault();
@@ -533,6 +655,21 @@ $vehicles = $vehicles->get_result();
             if (checkIn < new Date()) {
                 e.preventDefault();
                 alert('Check-in time cannot be in the past');
+            }
+        });
+    </script>
+    <script>
+        // Hide loading overlay when page is fully loaded
+        window.addEventListener('load', function() {
+            const loadingOverlay = document.getElementById('loadingOverlay');
+            const wrapper = document.getElementById('wrapper');
+
+            if (loadingOverlay) {
+                loadingOverlay.style.display = 'none';
+            }
+
+            if (wrapper) {
+                wrapper.classList.add('loaded');
             }
         });
     </script>

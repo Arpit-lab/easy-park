@@ -36,9 +36,15 @@ $booking_history = $booking_history->get_result();
 // Get nearby available spaces
 $nearby_spaces = $conn->query("
     SELECT ps.*, vc.category_name, 
-           (SELECT COUNT(*) FROM parking_bookings WHERE space_id = ps.id AND booking_status = 'active') as current_bookings
+           COALESCE(pb_count.current_bookings, 0) as current_bookings
     FROM parking_spaces ps
     JOIN vehicle_categories vc ON ps.category_id = vc.id
+    LEFT JOIN (
+        SELECT space_id, COUNT(*) as current_bookings
+        FROM parking_bookings 
+        WHERE booking_status = 'active'
+        GROUP BY space_id
+    ) pb_count ON ps.id = pb_count.space_id
     WHERE ps.status = 'active' AND ps.is_available = 1
     ORDER BY ps.id
     LIMIT 5
@@ -380,7 +386,7 @@ $prediction = getParkingPrediction();
                                          ($prediction['severity'] == 'warning' ? 'info-circle' : 'check-circle');
                                 ?> me-2"></i><?php echo $prediction['status']; ?>
                             </h5>
-                            <p class="card-text mb-2"><?php echo $prediction['recommendation']; ?></p>
+                            <p class="card-text mb-2"><?php echo htmlspecialchars($prediction['recommendation'] ?? 'Recommendation not available'); ?></p>
                             <small class="text-muted">
                                 <strong>Current:</strong> <?php echo $prediction['available_spaces']; ?> of <?php echo $prediction['total_spaces']; ?> spaces available 
                                 (<?php echo $prediction['occupancy_percent']; ?>% occupied)
